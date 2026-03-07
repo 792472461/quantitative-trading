@@ -21,6 +21,7 @@
 - 国金证券接入准备文档
 - 国金 QMT / Ptrade 本地终端骨架
 - terminal client 抽象
+- QMT SDK client scaffold
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -71,6 +72,7 @@
 - `python -m qt_trader.cli broker-account --config config/guojin_http_readonly.yaml`
 - `python -m qt_trader.cli broker-account --config config/guojin_qmt.yaml`
 - `python -m qt_trader.cli broker-account --config config/guojin_ptrade.yaml`
+- `python -m qt_trader.cli preflight-check --config config/guojin_qmt_sdk.yaml`
 - `python -m qt_trader.cli optimize-strategy --config config/example.yaml`
 - `python -m qt_trader.cli preflight-check --config config/example.yaml`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
@@ -207,14 +209,14 @@
 
 本轮目标：
 
-- 抽象 terminal client 接口，为 QMT / Ptrade SDK 对接做准备
-- 让国金终端 broker 改为依赖可替换 client
-- 保持现有 mock state file 联调链路可用
+- 增加 QMT SDK client scaffold
+- 让 preflight 支持 qmt_sdk 模式
+- 为真实 xtquant 查询 adapter 预留注入点
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
-- 国金 QMT / Ptrade SDK 对接
+- 国金 QMT xtquant 查询 adapter
 - broker 同步调度与告警
 - 任务守护与自动恢复完善
 - dashboard Web 化

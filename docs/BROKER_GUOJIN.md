@@ -8,6 +8,8 @@
   配置文件：[config/guojin_http_readonly.yaml](F:/workspace/python/quantitative-trading/config/guojin_http_readonly.yaml)
 - QMT 本地终端只读骨架
   配置文件：[config/guojin_qmt.yaml](F:/workspace/python/quantitative-trading/config/guojin_qmt.yaml)
+- QMT SDK scaffold 配置
+  配置文件：[config/guojin_qmt_sdk.yaml](F:/workspace/python/quantitative-trading/config/guojin_qmt_sdk.yaml)
 - Ptrade 本地终端只读骨架
   配置文件：[config/guojin_ptrade.yaml](F:/workspace/python/quantitative-trading/config/guojin_ptrade.yaml)
 - 适配器代码
@@ -34,6 +36,12 @@
 1. 先通过 QMT / Ptrade 本地终端只读骨架完成账户、持仓、委托查询联调
 2. 再补真实 SDK / API 调用
 3. 最后才考虑真实下单开关
+
+当前代码已经补到这一步：
+
+- `mock` 模式可通过本地状态文件联调完整查询链路
+- `qmt_sdk` 模式已具备 SDK client scaffold 和 preflight 检查
+- 真实 `xtquant` 查询 adapter 还需要下一步实现
 
 ## What Is Not Yet Confirmed
 
@@ -66,6 +74,8 @@
 当前无论是 HTTP、QMT 还是 Ptrade 路线，都默认只允许只读查询，不允许真实下单。
 
 使用 `config/guojin_qmt.yaml` 或 `config/guojin_ptrade.yaml` 前，需要先把 `broker.terminal_path` 改成你机器上的真实安装目录。
+
+如果你已经拿到了 QMT SDK 环境，可以改用 `config/guojin_qmt_sdk.yaml` 做环境检查；当前它会校验 SDK 模块是否可导入，但还不会直接完成真实查询。
 
 ```bash
 $env:BROKER_ACCOUNT_ID='guojin-qmt-demo-001'

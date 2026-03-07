@@ -6,6 +6,7 @@ from qt_trader.broker.base import BrokerGateway
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.paper import PaperBroker
+from qt_trader.broker.qmt_sdk import QMTSdkClient
 from qt_trader.broker.readonly import ReadOnlyBroker
 from qt_trader.config import AppConfig
 from qt_trader.costs import ExecutionCostModel
@@ -114,6 +115,25 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
         if config.broker.terminal_path is None:
             raise BrokerConfigurationError(
                 f"Broker provider '{config.broker.provider}' requires broker.terminal_path"
+            )
+        client_mode = config.broker.terminal_client_mode.lower()
+        if provider == "guojin_qmt" and client_mode == "qmt_sdk":
+            try:
+                client = QMTSdkClient(
+                    broker_name="guojin_qmt",
+                    account_id=os.getenv(config.broker.account_id_env, "guojin-qmt-account"),
+                    terminal_path=str(config.broker.terminal_path),
+                    environment="qmt_sdk_readonly",
+                    sdk_module=config.broker.sdk_module or "xtquant",
+                    session_id=config.broker.qmt_session_id,
+                )
+            except RuntimeError as exc:
+                raise BrokerConfigurationError(str(exc)) from exc
+            return GuojinQMTBroker(
+                account_id=os.getenv(config.broker.account_id_env, "guojin-qmt-account"),
+                terminal_path=config.broker.terminal_path,
+                executable_name=config.broker.executable_name or "XtMiniQmt.exe",
+                client=client,
             )
         if config.broker.terminal_state_file is None:
             raise BrokerConfigurationError(

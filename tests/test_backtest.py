@@ -10,8 +10,9 @@ from qt_trader.analytics import analyze_backtest
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
+from qt_trader.broker.qmt_sdk import QMTSdkClient
 from qt_trader.broker.terminal_client import MockTerminalClient
-from qt_trader.broker.factory import create_broker
+from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
 from qt_trader.data.akshare_data import AKShareDataFeed
@@ -643,6 +644,70 @@ def test_guojin_qmt_broker_accepts_injected_terminal_client(tmp_path: Path) -> N
     assert len(orders) == 1
 
 
+def test_qmt_sdk_client_accepts_injected_adapter() -> None:
+    class FakeQMTAdapter:
+        def get_account_info(self) -> AccountInfo:
+            return AccountInfo(
+                account_id="guojin-qmt-sdk-001",
+                broker="guojin_qmt",
+                cash=123456.0,
+                total_equity=130000.0,
+                buying_power=120000.0,
+                environment="qmt_sdk_readonly",
+            )
+
+        def get_positions(self) -> list[PositionInfo]:
+            return [
+                PositionInfo(
+                    symbol="600519.SH",
+                    quantity=10,
+                    average_cost=1500.0,
+                    market_price=1520.0,
+                    market_value=15200.0,
+                )
+            ]
+
+        def get_orders(self) -> list[OrderInfo]:
+            return [
+                OrderInfo(
+                    symbol="600519.SH",
+                    side="BUY",
+                    quantity=10,
+                    price=1500.0,
+                    status="FILLED",
+                    timestamp=datetime.fromisoformat("2026-03-07T09:35:00"),
+                    reason="sdk_adapter_test",
+                )
+            ]
+
+    client = QMTSdkClient(
+        broker_name="guojin_qmt",
+        account_id="guojin-qmt-sdk-001",
+        terminal_path="C:/Broker/Guojin/QMT",
+        sdk_module="json",
+        adapter=FakeQMTAdapter(),
+    )
+
+    assert client.get_account_info().account_id == "guojin-qmt-sdk-001"
+    assert len(client.get_positions()) == 1
+    assert len(client.get_orders()) == 1
+
+
+def test_guojin_qmt_sdk_factory_fails_cleanly_without_real_adapter(tmp_path: Path) -> None:
+    config = load_config(Path("config/guojin_qmt_sdk.yaml"))
+    config.broker.terminal_path = tmp_path
+    (tmp_path / "XtMiniQmt.exe").write_text("", encoding="utf-8")
+    config.broker.sdk_module = "json"
+    os.environ[config.broker.account_id_env] = "guojin-qmt-sdk-001"
+
+    try:
+        create_broker(config)
+    except BrokerConfigurationError as exc:
+        assert "query adapter is not wired yet" in str(exc)
+    else:
+        raise AssertionError("qmt sdk scaffold should require a concrete adapter")
+
+
 def test_backtest_analytics_computes_trade_metrics() -> None:
     config = load_config(Path("config/example.yaml"))
     bars = create_data_feed(config).load()
@@ -777,3 +842,24 @@ def test_preflight_checks_validate_terminal_broker_paths(tmp_path: Path) -> None
 
     assert check_map["broker"].status == "WARN"
     assert "scaffold ready" in check_map["broker"].message
+
+
+def test_preflight_checks_validate_qmt_sdk_mode(tmp_path: Path) -> None:
+    terminal_dir = tmp_path / "qmt"
+    terminal_dir.mkdir()
+    (terminal_dir / "XtMiniQmt.exe").write_text("", encoding="utf-8")
+
+    config = load_config(Path("config/guojin_qmt_sdk.yaml"))
+    config.storage.sqlite_path = tmp_path / "trading.db"
+    config.logging.jsonl_path = tmp_path / "logs/runtime.jsonl"
+    config.runtime.lock_path = tmp_path / "runtime/runtime.lock"
+    config.runtime.state_path = tmp_path / "runtime/state.json"
+    config.broker.terminal_path = terminal_dir
+    config.broker.sdk_module = "json"
+    os.environ[config.broker.account_id_env] = "guojin-qmt-sdk-001"
+
+    checks = run_preflight_checks(config)
+    check_map = {check.name: check for check in checks}
+
+    assert check_map["broker"].status == "WARN"
+    assert "sdk module ready" in check_map["broker"].message

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,18 @@ def _check_broker_configuration(config: AppConfig) -> PreflightCheck:
             executable_path = terminal_path / config.broker.executable_name
             if not executable_path.exists():
                 return PreflightCheck("broker", "WARN", f"terminal executable not found: {executable_path}")
+        client_mode = config.broker.terminal_client_mode.lower()
+        if provider == "guojin_qmt" and client_mode == "qmt_sdk":
+            sdk_module = config.broker.sdk_module or "xtquant"
+            try:
+                importlib.import_module(sdk_module)
+            except ModuleNotFoundError:
+                return PreflightCheck("broker", "FAIL", f"qmt sdk module not installed: {sdk_module}")
+            return PreflightCheck(
+                "broker",
+                "WARN",
+                f"provider={config.broker.provider} sdk module ready ({sdk_module}), query adapter pending",
+            )
         if config.broker.terminal_state_file is None:
             return PreflightCheck("broker", "FAIL", "terminal broker requires broker.terminal_state_file")
         state_file = Path(config.broker.terminal_state_file)

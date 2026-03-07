@@ -65,6 +65,9 @@ class BrokerConfig(BaseModel):
     terminal_path: Path | None = None
     executable_name: str | None = None
     terminal_type: str | None = None
+    terminal_client_mode: str = "mock"
+    sdk_module: str | None = None
+    qmt_session_id: int = Field(default=1, ge=1)
     terminal_state_file: Path | None = None
     state_file: Path = Path("config/broker_readonly_state.json")
     account_endpoint: str = "/account"

@@ -25,10 +25,11 @@ broker:
   read_only: true
   account_id_env: BROKER_ACCOUNT_ID
   terminal_type: qmt
-  terminal_client_mode: mock
+  terminal_client_mode: qmt_sdk
+  sdk_module: xtquant
+  qmt_session_id: 1
   terminal_path: C:/Broker/Guojin/QMT
   executable_name: XtMiniQmt.exe
-  terminal_state_file: config/guojin_qmt_state.json
 storage:
   sqlite_path: trading.db
 runtime:
