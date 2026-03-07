@@ -113,6 +113,16 @@
 - 熊市主要回撤
 - 还是在震荡市被频繁消耗
 
+项目中已经提供了一个可直接运行的示例配置：
+
+- [config/market_regime.yaml](F:/workspace/python/quantitative-trading/config/market_regime.yaml)
+
+对应命令：
+
+```bash
+python -m qt_trader.cli backtest --config config/market_regime.yaml
+```
+
 ## Caveat
 
 这套策略只是第一版示例策略，适合作为工程主链路验证，不代表已经是最优策略。

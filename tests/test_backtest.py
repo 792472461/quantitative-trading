@@ -888,6 +888,46 @@ def test_market_regime_analysis_breaks_down_returns_by_benchmark_state() -> None
     assert "bear" in regimes or "sideways" in regimes
 
 
+def test_market_regime_config_runs_with_benchmark_analysis() -> None:
+    config = load_config(Path("config/market_regime.yaml"))
+    bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
+    engine = BacktestEngine(
+        strategy=MovingAverageCrossStrategy(
+            symbols=["600519.SH"],
+            fast_window=config.strategy.fast_window,
+            slow_window=config.strategy.slow_window,
+            trade_size=config.strategy.trade_size,
+            market_filter_enabled=config.strategy.market_filter_enabled,
+            benchmark_symbol=config.strategy.benchmark_symbol,
+            market_fast_window=config.strategy.market_fast_window,
+            market_slow_window=config.strategy.market_slow_window,
+        ),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
+        risk_manager=RiskManager(
+            max_position_pct=config.backtest.max_position_pct,
+            max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
+        ),
+    )
+
+    result = engine.run(bars)
+    regime_metrics = analyze_market_regimes(
+        result=result,
+        bars=bars,
+        benchmark_symbol=config.strategy.benchmark_symbol,
+        fast_window=config.strategy.market_fast_window,
+        slow_window=config.strategy.market_slow_window,
+    )
+
+    assert result.final_snapshot is not None
+    assert regime_metrics
+    assert any(item.regime == "bull" for item in regime_metrics)
+
+
 def test_parameter_sweep_returns_ranked_results() -> None:
     config = load_config(Path("config/example.yaml"))
     bars = create_data_feed(config).load()

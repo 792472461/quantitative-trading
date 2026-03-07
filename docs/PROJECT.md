@@ -78,6 +78,7 @@
 - `python -m qt_trader.cli preflight-check --config config/guojin_qmt_sdk.yaml`
 - `python -m qt_trader.cli optimize-strategy --config config/example.yaml`
 - `python -m qt_trader.cli preflight-check --config config/example.yaml`
+- `python -m qt_trader.cli backtest --config config/market_regime.yaml`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
 - 回测分析会附带输出 Sharpe、Calmar、Expectancy
 - `broker-sync` 会输出相对上一版快照的资金、持仓、委托数量变化
@@ -212,9 +213,9 @@
 
 本轮目标：
 
-- 增加按 bull / bear / sideways 拆分的市场分析
-- 在 backtest 输出中展示分阶段收益与交易频次
-- 让市场过滤和市场分析形成研究闭环
+- 补充可直接运行的市场分析示例配置
+- 为 benchmark 过滤和阶段分析提供样例数据
+- 让市场研究链路开箱即用
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
