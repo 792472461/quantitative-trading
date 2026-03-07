@@ -45,6 +45,8 @@ qt-trader market-status --config config\example.yaml
 qt-trader send-test-alert --config config\example.yaml
 qt-trader runtime-state --config config\example.yaml
 qt-trader dashboard --config config\example.yaml
+qt-trader signal-watch --config config\example.yaml --iterations 1 --force
+qt-trader daily-workflow --config config\example.yaml --iterations 1 --at 2026-03-06T09:10:00
 qt-trader broker-account --config config\example.yaml
 qt-trader broker-account --config config\readonly_broker.yaml
 qt-trader broker-sync --config config\readonly_broker.yaml
@@ -111,6 +113,8 @@ qt-trader run-session --config config\example.yaml --force
 qt-trader send-test-alert --config config\example.yaml
 qt-trader runtime-state --config config\example.yaml
 qt-trader dashboard --config config\example.yaml
+qt-trader signal-watch --config config\example.yaml --iterations 1 --force
+qt-trader daily-workflow --config config\example.yaml --iterations 1 --at 2026-03-06T15:10:00
 qt-trader broker-account --config config\example.yaml
 qt-trader broker-account --config config\readonly_broker.yaml
 qt-trader broker-sync --config config\readonly_broker.yaml
@@ -121,6 +125,8 @@ qt-trader version
 
 `paper-trade` 会把订单、成交和资金快照写入 SQLite 数据库，默认文件是 `trading.db`。
 `run-session` 会先检查当前是否在交易时段内；`--force` 可用于离线演练。
+`signal-watch` 会在最新一根 bar 上发现新信号时提醒，但不会下真实订单。
+`daily-workflow` 会在 `9:00-9:30` 做盘前复核和参数筛选，在 `15:00` 后做收益统计；当前“实时新闻抓取”仍是待接入项。
 运行日志会写到 `logs/runtime.jsonl`，告警可输出到终端和 `logs/alerts.log`。
 运行锁默认写到 `runtime.lock`，运行状态默认写到 `runtime_state.json`。
 `readonly_broker.yaml` 是只读联调样例，不会允许真实下单，只会读取本地账户快照文件。

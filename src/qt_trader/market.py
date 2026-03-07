@@ -25,6 +25,7 @@ class TradingCalendar:
         self.holidays = {date.fromisoformat(item) for item in config.holidays}
         self.makeup_workdays = {date.fromisoformat(item) for item in config.makeup_workdays}
         self._load_holiday_files(config.holiday_files)
+        self.pre_market_start = self._parse_time(config.pre_market_start)
         self.morning_start = self._parse_time(config.morning_start)
         self.morning_end = self._parse_time(config.morning_end)
         self.afternoon_start = self._parse_time(config.afternoon_start)
@@ -50,8 +51,11 @@ class TradingCalendar:
         elif self.afternoon_start <= current_clock < self.afternoon_end:
             phase = "afternoon"
             is_open = True
-        elif current_clock < self.morning_start:
-            phase = "pre_open"
+        elif self.pre_market_start <= current_clock < self.morning_start:
+            phase = "pre_market"
+            is_open = False
+        elif current_clock < self.pre_market_start:
+            phase = "closed"
             is_open = False
         elif self.morning_end <= current_clock < self.afternoon_start:
             phase = "midday_break"
@@ -86,6 +90,13 @@ class TradingCalendar:
             candidate += timedelta(days=1)
             if self.is_trading_day(candidate):
                 return self._combine(candidate, self.morning_start)
+
+    def previous_trading_day(self, current_date: date) -> date:
+        candidate = current_date
+        while True:
+            candidate -= timedelta(days=1)
+            if self.is_trading_day(candidate):
+                return candidate
 
     def _combine(self, current_date: date, current_time: time) -> datetime:
         return datetime.combine(current_date, current_time, tzinfo=self.timezone)

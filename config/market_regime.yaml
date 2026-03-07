@@ -50,6 +50,7 @@ alert:
 market:
   timezone: Asia/Shanghai
   weekdays: [0, 1, 2, 3, 4]
+  pre_market_start: "09:00"
   morning_start: "09:30"
   morning_end: "11:30"
   afternoon_start: "13:00"

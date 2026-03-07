@@ -92,6 +92,7 @@ class RuntimeConfig(BaseModel):
     lock_path: Path = Path("runtime.lock")
     state_path: Path = Path("runtime_state.json")
     signal_state_path: Path = Path("signal_watch_state.json")
+    workflow_state_path: Path = Path("daily_workflow_state.json")
 
 
 class LoggingConfig(BaseModel):
@@ -109,6 +110,7 @@ class AlertConfig(BaseModel):
 class MarketConfig(BaseModel):
     timezone: str = "Asia/Shanghai"
     weekdays: list[int] = [0, 1, 2, 3, 4]
+    pre_market_start: str = "09:00"
     morning_start: str = "09:30"
     morning_end: str = "11:30"
     afternoon_start: str = "13:00"

@@ -74,6 +74,17 @@ class BacktestRunRecord:
     final_equity: float
 
 
+@dataclass(slots=True)
+class DailyPerformanceRecord:
+    trading_date: str
+    created_at: str
+    total_return_pct: float
+    max_drawdown_pct: float
+    final_equity: float
+    filled_orders: int
+    rejected_orders: int
+
+
 class SQLiteStorage:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -207,6 +218,20 @@ class SQLiteStorage:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_performance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trading_date TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    total_return_pct REAL NOT NULL,
+                    max_drawdown_pct REAL NOT NULL,
+                    final_equity REAL NOT NULL,
+                    filled_orders INTEGER NOT NULL,
+                    rejected_orders INTEGER NOT NULL
+                )
+                """
+            )
 
     def _ensure_fill_columns(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(fills)").fetchall()}
@@ -293,6 +318,7 @@ class SQLiteStorage:
             broker_accounts = conn.execute("SELECT COUNT(*) FROM broker_accounts").fetchone()[0]
             broker_positions = conn.execute("SELECT COUNT(*) FROM broker_positions").fetchone()[0]
             broker_orders = conn.execute("SELECT COUNT(*) FROM broker_orders").fetchone()[0]
+            daily_performance = conn.execute("SELECT COUNT(*) FROM daily_performance").fetchone()[0]
         return {
             "orders": orders,
             "fills": fills,
@@ -302,7 +328,94 @@ class SQLiteStorage:
             "broker_accounts": broker_accounts,
             "broker_positions": broker_positions,
             "broker_orders": broker_orders,
+            "daily_performance": daily_performance,
         }
+
+    def save_daily_performance(
+        self,
+        *,
+        trading_date: str,
+        created_at: str,
+        total_return_pct: float,
+        max_drawdown_pct: float,
+        final_equity: float,
+        filled_orders: int,
+        rejected_orders: int,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO daily_performance (
+                    trading_date,
+                    created_at,
+                    total_return_pct,
+                    max_drawdown_pct,
+                    final_equity,
+                    filled_orders,
+                    rejected_orders
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    trading_date,
+                    created_at,
+                    total_return_pct,
+                    max_drawdown_pct,
+                    final_equity,
+                    filled_orders,
+                    rejected_orders,
+                ),
+            )
+
+    def latest_daily_performance(self, limit: int = 5) -> list[DailyPerformanceRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT trading_date, created_at, total_return_pct, max_drawdown_pct, final_equity, filled_orders, rejected_orders
+                FROM daily_performance
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            DailyPerformanceRecord(
+                trading_date=str(row[0]),
+                created_at=str(row[1]),
+                total_return_pct=float(row[2]),
+                max_drawdown_pct=float(row[3]),
+                final_equity=float(row[4]),
+                filled_orders=int(row[5]),
+                rejected_orders=int(row[6]),
+            )
+            for row in rows
+        ]
+
+    def fills_on_date(self, trading_date: str, side: str | None = None) -> list[dict[str, object]]:
+        sql = """
+            SELECT symbol, side, quantity, price, timestamp, commission, stamp_duty
+            FROM fills
+            WHERE substr(timestamp, 1, 10) = ?
+        """
+        params: list[object] = [trading_date]
+        if side is not None:
+            sql += " AND side = ?"
+            params.append(side)
+        sql += " ORDER BY id ASC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [
+            {
+                "symbol": str(row[0]),
+                "side": str(row[1]),
+                "quantity": int(row[2]),
+                "price": float(row[3]),
+                "timestamp": str(row[4]),
+                "commission": float(row[5]),
+                "stamp_duty": float(row[6]),
+            }
+            for row in rows
+        ]
 
     def save_backtest_run(
         self,

@@ -12,7 +12,13 @@ from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
 from qt_trader.data.factory import create_data_feed
-from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore, SignalWatchStateStore
+from qt_trader.guardian import (
+    DailyWorkflowStateStore,
+    RuntimeLock,
+    RuntimeLockError,
+    RuntimeStateStore,
+    SignalWatchStateStore,
+)
 from qt_trader.market import TradingCalendar
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.portfolio import Portfolio
@@ -131,6 +137,81 @@ def render_signal_watch_result(result) -> None:
     else:
         signal_table.add_row("-", "-", "-", "0", "-", "-")
     console.print(signal_table)
+
+
+def render_pre_market_review(trading_date: str, previous_trading_date: str, yesterday_buys, signal_result, top_sweeps) -> None:
+    overview = Table(title="Pre-Market Review")
+    overview.add_column("Metric")
+    overview.add_column("Value", justify="right")
+    overview.add_row("Trading Date", trading_date)
+    overview.add_row("Previous Trading Day", previous_trading_date)
+    overview.add_row("Yesterday Buys", str(len(yesterday_buys)))
+    overview.add_row("Today Open Signals", str(len(signal_result.alerted_signals)))
+    overview.add_row("News Fetch", "pending integration")
+    console.print(overview)
+
+    buy_table = Table(title="Yesterday Buy Fills")
+    buy_table.add_column("Symbol")
+    buy_table.add_column("Quantity", justify="right")
+    buy_table.add_column("Price", justify="right")
+    buy_table.add_column("Timestamp")
+    if yesterday_buys:
+        for row in yesterday_buys:
+            buy_table.add_row(str(row["symbol"]), str(row["quantity"]), f"{float(row['price']):.2f}", str(row["timestamp"]))
+    else:
+        buy_table.add_row("-", "0", "-", "-")
+    console.print(buy_table)
+
+    signal_table = Table(title="Open Candidate Signals")
+    signal_table.add_column("Symbol")
+    signal_table.add_column("Side")
+    signal_table.add_column("Qty", justify="right")
+    signal_table.add_column("Price", justify="right")
+    signal_table.add_column("Reason")
+    if signal_result.alerted_signals:
+        for item in signal_result.alerted_signals:
+            signal_table.add_row(
+                item.signal.symbol,
+                item.signal.side.value,
+                str(item.signal.quantity),
+                f"{item.price:.2f}",
+                item.signal.reason,
+            )
+    else:
+        signal_table.add_row("-", "-", "0", "-", "-")
+    console.print(signal_table)
+
+    sweep_table = Table(title="Best Pre-Market Strategy Candidates")
+    sweep_table.add_column("Rank", justify="right")
+    sweep_table.add_column("MA")
+    sweep_table.add_column("Return", justify="right")
+    sweep_table.add_column("Sharpe", justify="right")
+    sweep_table.add_column("Drawdown", justify="right")
+    if top_sweeps:
+        for index, item in enumerate(top_sweeps, start=1):
+            sweep_table.add_row(
+                str(index),
+                f"{item.fast_window}/{item.slow_window}",
+                f"{item.metrics.total_return_pct:.2f}%",
+                f"{item.metrics.sharpe_ratio:.2f}",
+                f"{item.metrics.max_drawdown_pct:.2f}%",
+            )
+    else:
+        sweep_table.add_row("-", "-", "-", "-", "-")
+    console.print(sweep_table)
+
+
+def render_post_close_summary(trading_date: str, metrics, final_snapshot, executed_orders: int, rejected_orders: int) -> None:
+    table = Table(title="Post-Close Performance")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Trading Date", trading_date)
+    table.add_row("Final Equity", f"{final_snapshot.total_value:.2f}")
+    table.add_row("Total Return", f"{metrics.total_return_pct:.2f}%")
+    table.add_row("Max Drawdown", f"{metrics.max_drawdown_pct:.2f}%")
+    table.add_row("Filled Orders", str(executed_orders))
+    table.add_row("Rejected Orders", str(rejected_orders))
+    console.print(table)
 
 
 def format_delta(value: float | int | None, precision: int = 2) -> str:
@@ -316,6 +397,123 @@ def signal_watch(
     except RuntimeLockError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def daily_workflow(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    iterations: int = typer.Option(1, min=0, help="Number of workflow cycles. Use 0 to keep running."),
+    fast_windows: str = typer.Option("3,5,8", help="Comma separated fast MA windows for pre-market review."),
+    slow_windows: str = typer.Option("10,20,30", help="Comma separated slow MA windows for pre-market review."),
+    top_n: int = typer.Option(3, min=1, max=10, help="Top strategy candidates to display in pre-market review."),
+    at: str | None = typer.Option(None, help="Optional local time, format: YYYY-MM-DDTHH:MM:SS"),
+) -> None:
+    app_config = load_config(config)
+    storage, logger, alert_notifier, _ = build_runtime_dependencies(app_config)
+    calendar = TradingCalendar(app_config.market)
+    scheduler = SessionScheduler(calendar)
+    workflow_state_store = DailyWorkflowStateStore(app_config.runtime.workflow_state_path)
+    signal_state_store = SignalWatchStateStore(app_config.runtime.signal_state_path)
+    fixed_time = datetime.fromisoformat(at) if at else None
+
+    try:
+        fast_values = parse_int_list(fast_windows)
+        slow_values = parse_int_list(slow_windows)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    cycle = 0
+    try:
+        with RuntimeLock(app_config.runtime.lock_path):
+            while iterations == 0 or cycle < iterations:
+                cycle += 1
+                current_time = fixed_time
+                status = calendar.status(current_time)
+                trading_date = status.current_time.date().isoformat()
+                workflow_state_store.mark_started()
+
+                if not status.is_trading_day:
+                    console.print(f"[yellow]Workflow idle: non-trading day, next_open={status.next_open.isoformat()}[/yellow]")
+                elif status.phase == "pre_market":
+                    state = workflow_state_store.load()
+                    if state.last_pre_market_date == trading_date:
+                        console.print(f"[yellow]Pre-market review already completed for {trading_date}.[/yellow]")
+                    else:
+                        bars = create_data_feed(app_config).load()
+                        signal_result = SignalWatchingRuntime(
+                            strategy=build_strategy(app_config),
+                            storage=storage,
+                            logger=logger,
+                            alert_notifier=alert_notifier,
+                            signal_state_store=signal_state_store,
+                        ).scan(bars)
+                        sweep_results = optimize_moving_average_parameters(
+                            bars=bars,
+                            config=app_config,
+                            fast_windows=fast_values,
+                            slow_windows=slow_values,
+                        )
+                        previous_trading_day = calendar.previous_trading_day(status.current_time.date()).isoformat()
+                        yesterday_buys = storage.fills_on_date(previous_trading_day, side="BUY")
+                        render_pre_market_review(
+                            trading_date=trading_date,
+                            previous_trading_date=previous_trading_day,
+                            yesterday_buys=yesterday_buys,
+                            signal_result=signal_result,
+                            top_sweeps=sweep_results[:top_n],
+                        )
+                        workflow_state_store.mark_pre_market_done(trading_date)
+                elif status.phase == "post_close":
+                    state = workflow_state_store.load()
+                    if state.last_post_close_date == trading_date:
+                        console.print(f"[yellow]Post-close summary already completed for {trading_date}.[/yellow]")
+                    else:
+                        bars = create_data_feed(app_config).load()
+                        portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
+                        result = BacktestEngine(
+                            strategy=build_strategy(app_config),
+                            broker=create_broker(app_config, portfolio=portfolio),
+                            portfolio=portfolio,
+                            risk_manager=build_risk_manager(app_config),
+                        ).run(bars)
+                        final_snapshot = result.final_snapshot
+                        if final_snapshot is None:
+                            console.print("[red]No market data loaded.[/red]")
+                            raise typer.Exit(code=1)
+                        metrics = analyze_backtest(result, app_config.backtest.initial_cash)
+                        storage.save_daily_performance(
+                            trading_date=trading_date,
+                            created_at=datetime.now().isoformat(),
+                            total_return_pct=metrics.total_return_pct,
+                            max_drawdown_pct=metrics.max_drawdown_pct,
+                            final_equity=final_snapshot.total_value,
+                            filled_orders=len(result.executed_orders),
+                            rejected_orders=len(result.rejected_orders),
+                        )
+                        render_post_close_summary(
+                            trading_date=trading_date,
+                            metrics=metrics,
+                            final_snapshot=final_snapshot,
+                            executed_orders=len(result.executed_orders),
+                            rejected_orders=len(result.rejected_orders),
+                        )
+                        workflow_state_store.mark_post_close_done(trading_date)
+                else:
+                    console.print(f"[yellow]Workflow idle: {scheduler.describe(current_time)}[/yellow]")
+
+                workflow_state_store.mark_completed()
+                if iterations != 0 and cycle >= iterations:
+                    break
+                if fixed_time is not None:
+                    break
+                time.sleep(app_config.runtime.polling_interval_seconds)
+    except RuntimeLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:  # noqa: BLE001
+        workflow_state_store.mark_failed(str(exc))
+        raise
 
 
 @app.command()

@@ -9,3 +9,5 @@ trading.db
 logs/
 runtime.lock
 runtime_state.json
+signal_watch_state.json
+daily_workflow_state.json

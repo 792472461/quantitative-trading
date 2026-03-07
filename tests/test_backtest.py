@@ -19,7 +19,13 @@ from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
 from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
-from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore, SignalWatchStateStore
+from qt_trader.guardian import (
+    DailyWorkflowStateStore,
+    RuntimeLock,
+    RuntimeLockError,
+    RuntimeStateStore,
+    SignalWatchStateStore,
+)
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
 from qt_trader.models import AccountInfo, Bar, Order, OrderInfo, OrderSide, Position, PositionInfo
@@ -179,13 +185,19 @@ def test_trading_calendar_and_scheduler() -> None:
     scheduler = SessionScheduler(calendar)
 
     open_time = datetime.fromisoformat("2026-03-06T10:00:00")
+    pre_market_time = datetime.fromisoformat("2026-03-06T09:10:00")
+    early_closed_time = datetime.fromisoformat("2026-03-06T08:30:00")
     lunch_time = datetime.fromisoformat("2026-03-06T12:00:00")
     weekend_time = datetime.fromisoformat("2026-03-07T10:00:00")
     holiday_time = datetime.fromisoformat("2026-10-01T10:00:00")
     makeup_workday_time = datetime.fromisoformat("2026-02-14T10:00:00")
+    post_close_time = datetime.fromisoformat("2026-03-06T15:10:00")
 
     assert calendar.status(open_time).is_open is True
+    assert calendar.status(pre_market_time).phase == "pre_market"
+    assert calendar.status(early_closed_time).phase == "closed"
     assert calendar.status(lunch_time).phase == "midday_break"
+    assert calendar.status(post_close_time).phase == "post_close"
     assert calendar.status(weekend_time).is_trading_day is False
     assert calendar.status(holiday_time).is_trading_day is False
     assert calendar.status(makeup_workday_time).is_trading_day is True
@@ -338,6 +350,21 @@ def test_runtime_lock_and_state_store(tmp_path: Path) -> None:
     assert state_store.load().last_status == "completed"
 
 
+def test_daily_workflow_state_store_marks_phase_completion(tmp_path: Path) -> None:
+    store = DailyWorkflowStateStore(tmp_path / "daily_workflow_state.json")
+
+    store.mark_started()
+    assert store.load().last_status == "running"
+    store.mark_pre_market_done("2026-03-09")
+    store.mark_post_close_done("2026-03-09")
+    state = store.load()
+
+    assert state.last_pre_market_date == "2026-03-09"
+    assert state.last_post_close_date == "2026-03-09"
+    store.mark_completed()
+    assert store.load().last_status == "completed"
+
+
 def test_storage_dashboard_queries(tmp_path: Path) -> None:
     storage = SQLiteStorage(tmp_path / "dashboard.db")
     config = load_config(Path("config/example.yaml"))
@@ -377,6 +404,39 @@ def test_storage_dashboard_queries(tmp_path: Path) -> None:
     assert summary.backtest_runs == 0
     assert len(recent_events) <= 3
     assert isinstance(symbol_summary, list)
+
+
+def test_storage_daily_performance_and_fill_queries(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "workflow.db")
+    storage.save_daily_performance(
+        trading_date="2026-03-09",
+        created_at="2026-03-09T15:05:00",
+        total_return_pct=1.23,
+        max_drawdown_pct=0.45,
+        final_equity=202460.0,
+        filled_orders=2,
+        rejected_orders=0,
+    )
+    storage.save_fill(
+        create_broker(load_config(Path("config/example.yaml")), portfolio=Portfolio(initial_cash=100000)).submit_order(
+            Order(
+                symbol="600519.SH",
+                side=OrderSide.BUY,
+                quantity=10,
+                timestamp=datetime.fromisoformat("2026-03-08T10:00:00"),
+                price=100.0,
+            ),
+            100.0,
+        )
+    )
+
+    daily_rows = storage.latest_daily_performance(limit=1)
+    buy_rows = storage.fills_on_date("2026-03-08", side="BUY")
+
+    assert len(daily_rows) == 1
+    assert daily_rows[0].trading_date == "2026-03-09"
+    assert len(buy_rows) == 1
+    assert buy_rows[0]["symbol"] == "600519.SH"
 
 
 def test_paper_broker_account_queries() -> None:

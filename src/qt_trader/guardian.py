@@ -49,6 +49,16 @@ class SignalWatchState:
     seen_signal_keys: list[str] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class DailyWorkflowState:
+    last_status: str = "idle"
+    last_error: str | None = None
+    last_pre_market_date: str | None = None
+    last_post_close_date: str | None = None
+    last_run_started_at: str | None = None
+    last_run_completed_at: str | None = None
+
+
 class RuntimeStateStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -135,5 +145,56 @@ class SignalWatchStateStore:
         keys = [item for item in state.seen_signal_keys if item != key]
         keys.append(key)
         state.seen_signal_keys = keys[-self.max_seen_signals :]
+        self.save(state)
+        return state
+
+
+class DailyWorkflowStateStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+
+    def load(self) -> DailyWorkflowState:
+        if not self.path.exists():
+            return DailyWorkflowState()
+        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        return DailyWorkflowState(**raw)
+
+    def save(self, state: DailyWorkflowState) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(asdict(state), ensure_ascii=True, indent=2), encoding="utf-8")
+
+    def mark_started(self) -> DailyWorkflowState:
+        state = self.load()
+        state.last_status = "running"
+        state.last_error = None
+        state.last_run_started_at = datetime.now(timezone.utc).isoformat()
+        self.save(state)
+        return state
+
+    def mark_completed(self) -> DailyWorkflowState:
+        state = self.load()
+        state.last_status = "completed"
+        state.last_error = None
+        state.last_run_completed_at = datetime.now(timezone.utc).isoformat()
+        self.save(state)
+        return state
+
+    def mark_failed(self, error: str) -> DailyWorkflowState:
+        state = self.load()
+        state.last_status = "failed"
+        state.last_error = error
+        state.last_run_completed_at = datetime.now(timezone.utc).isoformat()
+        self.save(state)
+        return state
+
+    def mark_pre_market_done(self, trading_date: str) -> DailyWorkflowState:
+        state = self.load()
+        state.last_pre_market_date = trading_date
+        self.save(state)
+        return state
+
+    def mark_post_close_done(self, trading_date: str) -> DailyWorkflowState:
+        state = self.load()
+        state.last_post_close_date = trading_date
         self.save(state)
         return state
