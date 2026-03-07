@@ -4,6 +4,7 @@ from pathlib import Path
 
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker, HTTPSessionProtocol
 from qt_trader.broker.terminal import LocalTerminalReadOnlyBroker
+from qt_trader.broker.terminal_client import TerminalClient
 
 
 class GuojinHTTPReadOnlyBroker(HTTPReadOnlyBroker):
@@ -38,8 +39,9 @@ class GuojinQMTBroker(LocalTerminalReadOnlyBroker):
         self,
         account_id: str,
         terminal_path: str | Path,
-        state_file: str | Path,
+        state_file: str | Path | None = None,
         executable_name: str = "XtMiniQmt.exe",
+        client: TerminalClient | None = None,
     ) -> None:
         super().__init__(
             broker_name="guojin_qmt",
@@ -49,6 +51,7 @@ class GuojinQMTBroker(LocalTerminalReadOnlyBroker):
             state_file=state_file,
             executable_name=executable_name,
             environment="qmt_readonly",
+            client=client,
         )
 
 
@@ -57,8 +60,9 @@ class GuojinPtradeBroker(LocalTerminalReadOnlyBroker):
         self,
         account_id: str,
         terminal_path: str | Path,
-        state_file: str | Path,
+        state_file: str | Path | None = None,
         executable_name: str = "PtradeClient.exe",
+        client: TerminalClient | None = None,
     ) -> None:
         super().__init__(
             broker_name="guojin_ptrade",
@@ -68,4 +72,5 @@ class GuojinPtradeBroker(LocalTerminalReadOnlyBroker):
             state_file=state_file,
             executable_name=executable_name,
             environment="ptrade_readonly",
+            client=client,
         )

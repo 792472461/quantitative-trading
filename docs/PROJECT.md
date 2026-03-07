@@ -20,6 +20,7 @@
 - HTTP 只读 broker 骨架
 - 国金证券接入准备文档
 - 国金 QMT / Ptrade 本地终端骨架
+- terminal client 抽象
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -206,9 +207,9 @@
 
 本轮目标：
 
-- 增加国金 QMT / Ptrade 本地终端 broker scaffold
-- 为 QMT / Ptrade 增加示例配置和 preflight 校验
-- 把国金接入路线从 HTTP 占位骨架扩展到本地终端骨架
+- 抽象 terminal client 接口，为 QMT / Ptrade SDK 对接做准备
+- 让国金终端 broker 改为依赖可替换 client
+- 保持现有 mock state file 联调链路可用
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities

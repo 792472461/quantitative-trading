@@ -10,6 +10,7 @@ from qt_trader.analytics import analyze_backtest
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
+from qt_trader.broker.terminal_client import MockTerminalClient
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
@@ -613,6 +614,31 @@ def test_guojin_ptrade_factory_and_queries() -> None:
     assert isinstance(broker, GuojinPtradeBroker)
     assert account.environment == "ptrade_readonly"
     assert account.account_id == "guojin-ptrade-demo-001"
+    assert len(positions) == 1
+    assert len(orders) == 1
+
+
+def test_guojin_qmt_broker_accepts_injected_terminal_client(tmp_path: Path) -> None:
+    state_file = tmp_path / "qmt_state.json"
+    state_file.write_text(Path("config/guojin_qmt_state.json").read_text(encoding="utf-8"), encoding="utf-8")
+    client = MockTerminalClient(
+        broker_name="guojin_qmt",
+        account_id="guojin-qmt-demo-001",
+        state_file=state_file,
+        environment="qmt_readonly",
+    )
+    broker = GuojinQMTBroker(
+        account_id="guojin-qmt-demo-001",
+        terminal_path=tmp_path,
+        client=client,
+    )
+
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    assert account.account_id == "guojin-qmt-demo-001"
+    assert account.broker == "guojin_qmt"
     assert len(positions) == 1
     assert len(orders) == 1
 
