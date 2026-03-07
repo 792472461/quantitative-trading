@@ -28,7 +28,7 @@ def test_backtest_runs_end_to_end() -> None:
 
     engine = BacktestEngine(
         strategy=MovingAverageCrossStrategy(
-            symbol=config.data.symbol,
+            symbols=config.data.symbols or [config.data.symbol],
             fast_window=config.strategy.fast_window,
             slow_window=config.strategy.slow_window,
             trade_size=config.strategy.trade_size,
@@ -58,7 +58,7 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
 
     runtime = PaperTradingRuntime(
         strategy=MovingAverageCrossStrategy(
-            symbol=config.data.symbol,
+            symbols=config.data.symbols or [config.data.symbol],
             fast_window=config.strategy.fast_window,
             slow_window=config.strategy.slow_window,
             trade_size=config.strategy.trade_size,
@@ -95,6 +95,7 @@ def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
     export_path = tmp_path / "akshare_export.csv"
     feed = AKShareDataFeed(
         symbol="600519",
+        symbols=["600519"],
         period="daily",
         start_date="20240101",
         end_date="20240131",
@@ -114,7 +115,7 @@ def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
             }
         )
 
-    feed._fetch_frame = fake_fetch_frame  # type: ignore[method-assign]
+    feed._fetch_frame = lambda symbol: fake_fetch_frame()  # type: ignore[method-assign]
     bars = feed.load()
 
     assert len(bars) == 2
@@ -134,9 +135,9 @@ def test_akshare_feed_falls_back_to_cached_csv(tmp_path: Path) -> None:
         }
     ).to_csv(export_path, index=False)
 
-    feed = AKShareDataFeed(symbol="600519", output_csv_path=export_path)
+    feed = AKShareDataFeed(symbol="600519", symbols=["600519"], output_csv_path=export_path)
 
-    def broken_fetch_frame() -> pd.DataFrame:
+    def broken_fetch_frame(symbol: str) -> pd.DataFrame:
         raise RuntimeError("network unavailable")
 
     feed._fetch_frame = broken_fetch_frame  # type: ignore[method-assign]
@@ -160,6 +161,31 @@ def test_trading_calendar_and_scheduler() -> None:
     assert calendar.status(weekend_time).is_trading_day is False
     assert scheduler.should_run_now(open_time) is True
     assert scheduler.should_run_now(weekend_time) is False
+
+
+def test_multi_symbol_backtest_runs() -> None:
+    config = load_config(Path("config/multi_symbol.yaml"))
+    bars = create_data_feed(config).load()
+
+    engine = BacktestEngine(
+        strategy=MovingAverageCrossStrategy(
+            symbols=config.data.symbols or [config.data.symbol],
+            fast_window=config.strategy.fast_window,
+            slow_window=config.strategy.slow_window,
+            trade_size=config.strategy.trade_size,
+        ),
+        broker=create_broker(config),
+        portfolio=Portfolio(initial_cash=config.backtest.initial_cash),
+        risk_manager=RiskManager(
+            max_position_pct=config.backtest.max_position_pct,
+            max_drawdown_pct=config.backtest.max_drawdown_pct,
+        ),
+    )
+
+    result = engine.run(bars)
+
+    assert result.final_snapshot is not None
+    assert len({order.symbol for order in result.executed_orders}) >= 1
 
 
 def test_execution_cost_model_applies_slippage_and_taxes() -> None:

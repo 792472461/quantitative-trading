@@ -8,17 +8,22 @@ from qt_trader.data.csv_data import CSVBarFeed
 
 def create_data_feed(config: AppConfig) -> MarketDataFeed:
     provider = config.data.provider.lower()
+    symbols = config.data.symbols or [config.data.symbol]
+    primary_symbol = symbols[0]
 
     if provider == "csv":
         return CSVBarFeed(
             csv_path=config.data.csv_path,
-            symbol=config.data.symbol,
+            csv_paths=config.data.csv_paths,
+            symbol=primary_symbol,
             datetime_column=config.data.datetime_column,
+            symbol_column=config.data.symbol_column,
         )
 
     if provider == "akshare":
         return AKShareDataFeed(
-            symbol=config.data.symbol,
+            symbol=primary_symbol,
+            symbols=symbols,
             period=config.data.period,
             start_date=config.data.start_date,
             end_date=config.data.end_date,

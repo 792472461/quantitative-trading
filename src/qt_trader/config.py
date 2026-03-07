@@ -19,7 +19,10 @@ class BacktestConfig(BaseModel):
 class DataConfig(BaseModel):
     provider: str = "csv"
     csv_path: Path
+    csv_paths: dict[str, Path] | None = None
     symbol: str
+    symbols: list[str] | None = None
+    symbol_column: str = "symbol"
     datetime_column: str = "datetime"
     period: str = "daily"
     start_date: str | None = None
@@ -31,6 +34,15 @@ class DataConfig(BaseModel):
     @classmethod
     def normalize_symbol(cls, value: object) -> str:
         return str(value)
+
+    @field_validator("symbols", mode="before")
+    @classmethod
+    def normalize_symbols(cls, value: object) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            return [str(item) for item in value]
+        return [str(value)]
 
 
 class StrategyConfig(BaseModel):

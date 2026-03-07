@@ -6,6 +6,7 @@
 
 - 策略开发接口
 - 可切换数据源
+- 多标的支持
 - CSV 行情驱动的回测引擎
 - AKShare A 股历史行情接入
 - 基础风险控制
@@ -34,6 +35,7 @@ pip install -e .[dev]
 qt-trader backtest --config config\example.yaml
 qt-trader paper-trade --config config\example.yaml
 qt-trader fetch-data --config config\akshare.yaml
+qt-trader backtest --config config\multi_symbol.yaml
 qt-trader market-status --config config\example.yaml
 qt-trader send-test-alert --config config\example.yaml
 ```
@@ -62,6 +64,7 @@ tests/
 
 - 本地研究策略
 - 做基础回测
+- 跑多标的组合级回测
 - 模拟下单和风控校验
 - 记录订单、成交和资金曲线
 - 运行 paper trading 主链路
@@ -79,6 +82,7 @@ tests/
 
 ```bash
 qt-trader backtest --config config\example.yaml
+qt-trader backtest --config config\multi_symbol.yaml
 qt-trader paper-trade --config config\example.yaml
 qt-trader fetch-data --config config\akshare.yaml
 qt-trader market-status --config config\example.yaml

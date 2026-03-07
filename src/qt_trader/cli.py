@@ -30,8 +30,9 @@ def build_strategy(config):
     if config.strategy.name != "moving_average_cross":
         raise ValueError(f"Unsupported strategy: {config.strategy.name}")
 
+    symbols = config.data.symbols or [config.data.symbol]
     return MovingAverageCrossStrategy(
-        symbol=config.data.symbol,
+        symbols=symbols,
         fast_window=config.strategy.fast_window,
         slow_window=config.strategy.slow_window,
         trade_size=config.strategy.trade_size,
@@ -129,7 +130,8 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
 def fetch_data(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
     bars = create_data_feed(app_config).load()
-    console.print(f"Fetched {len(bars)} bars for {app_config.data.symbol} via {app_config.data.provider}.")
+    symbols = app_config.data.symbols or [app_config.data.symbol]
+    console.print(f"Fetched {len(bars)} bars for {', '.join(symbols)} via {app_config.data.provider}.")
     if app_config.data.output_csv_path is not None:
         console.print(f"Saved normalized CSV to {app_config.data.output_csv_path}")
 

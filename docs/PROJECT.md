@@ -9,6 +9,7 @@
 - 策略接口与示例策略
 - CSV 和 AKShare 数据源
 - AKShare 失败时回退本地缓存 CSV
+- 多标的回测与模拟交易
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -81,13 +82,19 @@
 - 增加运行事件落库
 - 增加 stdout / file 告警
 
+### 2026-03-07 - `cb4ec21`
+
+`feat: add execution cost model and project notes`
+
+- 增加佣金、最低佣金、印花税、滑点模型
+- 建立持续维护的项目文档
+- 增加 AKShare 失败时的本地缓存回退
+
 ### 2026-03-07 - In Progress
 
 本轮目标：
 
-- 增加更真实的交易成本模型
-- 建立持续维护的项目文档
-- 增加 AKShare 到本地缓存的稳健回退
+- 增加多标的支持
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities

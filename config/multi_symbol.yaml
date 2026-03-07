@@ -1,11 +1,13 @@
 environment: paper
 data:
-  csv_path: data/sample_daily.csv
+  provider: csv
+  csv_path: data/multi_symbol_daily.csv
   symbol: 600519.SH
-  symbols: [600519.SH]
+  symbols: [600519.SH, 000001.SZ]
+  symbol_column: symbol
   datetime_column: datetime
 backtest:
-  initial_cash: 200000
+  initial_cash: 300000
   commission_rate: 0.0003
   min_commission: 5.0
   stamp_duty_rate: 0.001
@@ -33,7 +35,7 @@ logging:
 alert:
   enabled: true
   channels: [stdout, file]
-  max_drawdown_pct: 0.03
+  max_drawdown_pct: 0.05
   rejected_order_threshold: 1
 market:
   timezone: Asia/Shanghai
