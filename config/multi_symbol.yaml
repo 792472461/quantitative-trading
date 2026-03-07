@@ -32,6 +32,9 @@ storage:
 runtime:
   polling_interval_seconds: 1.0
   persist_snapshots: true
+  max_retries: 2
+  lock_path: runtime.lock
+  state_path: runtime_state.json
 logging:
   level: INFO
   jsonl_path: logs/runtime.jsonl

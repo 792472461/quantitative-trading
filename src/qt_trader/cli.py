@@ -11,6 +11,7 @@ from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
 from qt_trader.data.factory import create_data_feed
+from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
 from qt_trader.market import TradingCalendar
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.portfolio import Portfolio
@@ -56,7 +57,8 @@ def build_runtime_dependencies(app_config):
     storage = SQLiteStorage(app_config.storage.sqlite_path)
     logger = JsonLogger(app_config.logging.jsonl_path)
     alert_notifier = AlertNotifier(app_config.alert)
-    return storage, logger, alert_notifier
+    state_store = RuntimeStateStore(app_config.runtime.state_path)
+    return storage, logger, alert_notifier, state_store
 
 
 @app.command()
@@ -89,7 +91,7 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
 def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
     bars = create_data_feed(app_config).load()
-    storage, logger, alert_notifier = build_runtime_dependencies(app_config)
+    storage, logger, alert_notifier, state_store = build_runtime_dependencies(app_config)
 
     try:
         broker = create_broker(app_config)
@@ -97,26 +99,32 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    runtime = PaperTradingRuntime(
-        strategy=build_strategy(app_config),
-        broker=broker,
-        portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
-        risk_manager=RiskManager(
-            max_position_pct=app_config.backtest.max_position_pct,
-            max_drawdown_pct=app_config.backtest.max_drawdown_pct,
-            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
-            max_positions=app_config.backtest.max_positions,
-            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
-        ),
-        storage=storage,
-        persist_snapshots=app_config.runtime.persist_snapshots,
-        sleep_seconds=0.0,
-        logger=logger,
-        alert_notifier=alert_notifier,
-        max_drawdown_alert_pct=app_config.alert.max_drawdown_pct,
-        rejected_order_alert_threshold=app_config.alert.rejected_order_threshold,
-    )
-    result = runtime.run(bars)
+    try:
+        with RuntimeLock(app_config.runtime.lock_path):
+            runtime = PaperTradingRuntime(
+                strategy=build_strategy(app_config),
+                broker=broker,
+                portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
+                risk_manager=RiskManager(
+                    max_position_pct=app_config.backtest.max_position_pct,
+                    max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+                    max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
+                    max_positions=app_config.backtest.max_positions,
+                    max_symbol_quantity=app_config.backtest.max_symbol_quantity,
+                ),
+                storage=storage,
+                persist_snapshots=app_config.runtime.persist_snapshots,
+                sleep_seconds=0.0,
+                logger=logger,
+                alert_notifier=alert_notifier,
+                max_drawdown_alert_pct=app_config.alert.max_drawdown_pct,
+                rejected_order_alert_threshold=app_config.alert.rejected_order_threshold,
+                state_store=state_store,
+            )
+            result = runtime.run(bars)
+    except RuntimeLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     final_snapshot = result.snapshots[-1] if result.snapshots else None
     if final_snapshot is None:
         console.print("[red]No market data loaded.[/red]")
@@ -176,33 +184,70 @@ def run_session(
         raise typer.Exit(code=1)
 
     bars = create_data_feed(app_config).load()
-    storage, logger, alert_notifier = build_runtime_dependencies(app_config)
-    runtime = PaperTradingRuntime(
-        strategy=build_strategy(app_config),
-        broker=create_broker(app_config),
-        portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
-        risk_manager=RiskManager(
-            max_position_pct=app_config.backtest.max_position_pct,
-            max_drawdown_pct=app_config.backtest.max_drawdown_pct,
-            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
-            max_positions=app_config.backtest.max_positions,
-            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
-        ),
-        storage=storage,
-        persist_snapshots=app_config.runtime.persist_snapshots,
-        sleep_seconds=0.0,
-        logger=logger,
-        alert_notifier=alert_notifier,
-        max_drawdown_alert_pct=app_config.alert.max_drawdown_pct,
-        rejected_order_alert_threshold=app_config.alert.rejected_order_threshold,
-    )
-    result = runtime.run(bars)
+    storage, logger, alert_notifier, state_store = build_runtime_dependencies(app_config)
+    attempts = 0
+    result = None
+    try:
+        with RuntimeLock(app_config.runtime.lock_path):
+            while attempts <= app_config.runtime.max_retries:
+                attempts += 1
+                try:
+                    runtime = PaperTradingRuntime(
+                        strategy=build_strategy(app_config),
+                        broker=create_broker(app_config),
+                        portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
+                        risk_manager=RiskManager(
+                            max_position_pct=app_config.backtest.max_position_pct,
+                            max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+                            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
+                            max_positions=app_config.backtest.max_positions,
+                            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
+                        ),
+                        storage=storage,
+                        persist_snapshots=app_config.runtime.persist_snapshots,
+                        sleep_seconds=0.0,
+                        logger=logger,
+                        alert_notifier=alert_notifier,
+                        max_drawdown_alert_pct=app_config.alert.max_drawdown_pct,
+                        rejected_order_alert_threshold=app_config.alert.rejected_order_threshold,
+                        state_store=state_store,
+                    )
+                    result = runtime.run(bars)
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    state_store.mark_failed(str(exc), attempts)
+                    if attempts > app_config.runtime.max_retries:
+                        raise
+    except RuntimeLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:
+        console.print(f"[red]Session failed after {attempts} attempt(s): {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    if result is None:
+        console.print("[red]No runtime result produced.[/red]")
+        raise typer.Exit(code=1)
     final_snapshot = result.snapshots[-1] if result.snapshots else None
     if final_snapshot is None:
         console.print("[red]No market data loaded.[/red]")
         raise typer.Exit(code=1)
 
     render_summary("Session Summary", final_snapshot, len(result.executed_orders), len(result.rejected_orders))
+
+
+@app.command()
+def runtime_state(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    state = RuntimeStateStore(app_config.runtime.state_path).load()
+    summary = Table(title="Runtime State")
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Last Status", state.last_status)
+    summary.add_row("Started At", state.last_run_started_at or "-")
+    summary.add_row("Completed At", state.last_run_completed_at or "-")
+    summary.add_row("Retry Count", str(state.retry_count))
+    summary.add_row("Last Error", state.last_error or "-")
+    console.print(summary)
 
 
 @app.command()

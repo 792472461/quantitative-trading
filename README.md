@@ -16,6 +16,7 @@
 - 告警通道
 - 更真实的交易成本模型
 - 组合级风控
+- 任务守护与自动恢复基础
 - 券商网关抽象层
 - 本地模拟撮合网关
 - SQLite 持久化
@@ -40,6 +41,7 @@ qt-trader fetch-data --config config\akshare.yaml
 qt-trader backtest --config config\multi_symbol.yaml
 qt-trader market-status --config config\example.yaml
 qt-trader send-test-alert --config config\example.yaml
+qt-trader runtime-state --config config\example.yaml
 ```
 
 ## 项目结构
@@ -70,6 +72,7 @@ tests/
 - 模拟下单和风控校验
 - 控制组合总仓位和持仓集中度
 - 根据节假日和调休判断是否应运行
+- 防止重复启动并记录上次运行状态
 - 记录订单、成交和资金曲线
 - 运行 paper trading 主链路
 - 基于交易时段控制是否执行
@@ -92,12 +95,14 @@ qt-trader fetch-data --config config\akshare.yaml
 qt-trader market-status --config config\example.yaml
 qt-trader run-session --config config\example.yaml --force
 qt-trader send-test-alert --config config\example.yaml
+qt-trader runtime-state --config config\example.yaml
 qt-trader version
 ```
 
 `paper-trade` 会把订单、成交和资金快照写入 SQLite 数据库，默认文件是 `trading.db`。
 `run-session` 会先检查当前是否在交易时段内；`--force` 可用于离线演练。
 运行日志会写到 `logs/runtime.jsonl`，告警可输出到终端和 `logs/alerts.log`。
+运行锁默认写到 `runtime.lock`，运行状态默认写到 `runtime_state.json`。
 
 ## 项目文档
 

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from qt_trader.alerts import AlertMessage, AlertNotifier
 from qt_trader.broker.base import BrokerGateway
+from qt_trader.guardian import RuntimeStateStore
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.models import Bar, Order, OrderStatus, PortfolioSnapshot, RuntimeEvent
 from qt_trader.portfolio import Portfolio
@@ -35,6 +36,7 @@ class PaperTradingRuntime:
         alert_notifier: AlertNotifier | None = None,
         max_drawdown_alert_pct: float | None = None,
         rejected_order_alert_threshold: int = 1,
+        state_store: RuntimeStateStore | None = None,
     ) -> None:
         self.strategy = strategy
         self.broker = broker
@@ -47,11 +49,14 @@ class PaperTradingRuntime:
         self.alert_notifier = alert_notifier
         self.max_drawdown_alert_pct = max_drawdown_alert_pct
         self.rejected_order_alert_threshold = rejected_order_alert_threshold
+        self.state_store = state_store
         self._rejected_count = 0
 
     def run(self, bars: list[Bar]) -> RuntimeResult:
         result = RuntimeResult()
         latest_prices: dict[str, float] = {}
+        if self.state_store is not None:
+            self.state_store.mark_started()
         self._record_event("runtime_started", "INFO", f"Processing {len(bars)} bars")
 
         for bar in bars:
@@ -116,6 +121,8 @@ class PaperTradingRuntime:
                 time.sleep(self.sleep_seconds)
 
         self._record_event("runtime_finished", "INFO", "Runtime completed successfully")
+        if self.state_store is not None:
+            self.state_store.mark_completed()
         return result
 
     def _record_event(

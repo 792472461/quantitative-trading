@@ -11,6 +11,7 @@ from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
 from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
+from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
 from qt_trader.models import Order, OrderSide, Position
@@ -51,10 +52,12 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
     config = load_config(Path("config/example.yaml"))
     config.storage.sqlite_path = tmp_path / "runtime.db"
     config.logging.jsonl_path = tmp_path / "runtime.jsonl"
+    config.runtime.state_path = tmp_path / "runtime_state.json"
     bars = create_data_feed(config).load()
     storage = SQLiteStorage(config.storage.sqlite_path)
     logger = JsonLogger(config.logging.jsonl_path)
     alert_notifier = AlertNotifier(config.alert, output_path=tmp_path / "alerts.log")
+    state_store = RuntimeStateStore(config.runtime.state_path)
 
     runtime = PaperTradingRuntime(
         strategy=MovingAverageCrossStrategy(
@@ -76,6 +79,7 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
         alert_notifier=alert_notifier,
         max_drawdown_alert_pct=config.alert.max_drawdown_pct,
         rejected_order_alert_threshold=config.alert.rejected_order_threshold,
+        state_store=state_store,
     )
 
     result = runtime.run(bars)
@@ -89,6 +93,7 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
     assert config.logging.jsonl_path.exists()
     first_log = json.loads(config.logging.jsonl_path.read_text(encoding="utf-8").splitlines()[0])
     assert first_log["event_type"] == "runtime_started"
+    assert state_store.load().last_status == "completed"
 
 
 def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
@@ -248,3 +253,27 @@ def test_execution_cost_model_applies_slippage_and_taxes() -> None:
     assert round(sell_price, 4) == 99.95
     assert model.commission(buy_price, 10) == 5.0
     assert round(model.stamp_duty(sell_price, 100, OrderSide.SELL), 3) == 9.995
+
+
+def test_runtime_lock_and_state_store(tmp_path: Path) -> None:
+    lock_path = tmp_path / "runtime.lock"
+    state_path = tmp_path / "runtime_state.json"
+    state_store = RuntimeStateStore(state_path)
+
+    with RuntimeLock(lock_path):
+        assert lock_path.exists()
+        state_store.mark_started()
+        assert state_store.load().last_status == "running"
+        try:
+            with RuntimeLock(lock_path):
+                raise AssertionError("nested lock should not succeed")
+        except RuntimeLockError:
+            pass
+        else:
+            raise AssertionError("RuntimeLockError was not raised")
+
+    assert not lock_path.exists()
+    state_store.mark_failed("boom", 1)
+    assert state_store.load().last_status == "failed"
+    state_store.mark_completed()
+    assert state_store.load().last_status == "completed"

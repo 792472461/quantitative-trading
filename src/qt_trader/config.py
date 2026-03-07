@@ -70,6 +70,9 @@ class StorageConfig(BaseModel):
 class RuntimeConfig(BaseModel):
     polling_interval_seconds: float = Field(default=1.0, gt=0)
     persist_snapshots: bool = True
+    max_retries: int = Field(default=2, ge=0)
+    lock_path: Path = Path("runtime.lock")
+    state_path: Path = Path("runtime_state.json")
 
 
 class LoggingConfig(BaseModel):

@@ -7,3 +7,5 @@ __pycache__/
 *.egg-info/
 trading.db
 logs/
+runtime.lock
+runtime_state.json

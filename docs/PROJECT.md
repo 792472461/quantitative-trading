@@ -12,6 +12,7 @@
 - 多标的回测与模拟交易
 - 组合级风控
 - A 股节假日和调休日历
+- 任务守护与自动恢复基础
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -49,6 +50,7 @@
 - `python -m qt_trader.cli market-status --config config/example.yaml`
 - `python -m qt_trader.cli run-session --config config/example.yaml --force`
 - `python -m qt_trader.cli send-test-alert --config config/example.yaml`
+- `python -m qt_trader.cli runtime-state --config config/example.yaml`
 
 ## Iteration Log
 
@@ -108,16 +110,23 @@
 - 增加最大持仓数量限制
 - 增加单票最大股数限制
 
+### 2026-03-07 - `44103d4`
+
+`feat: add ashare holiday calendar overrides`
+
+- 增加 A 股节假日和调休日历文件
+- 支持 holiday file 覆盖规则
+- 支持节假日与调休工作日判断
+
 ### 2026-03-07 - In Progress
 
 本轮目标：
 
-- 增加更精细的 A 股交易日历
+- 增加任务守护与自动恢复基础
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
-- 更精细的 A 股交易日历
 - 实盘券商适配
 - 监控看板
-- 任务守护与自动恢复
+- 任务守护与自动恢复完善
