@@ -8,7 +8,7 @@ import pandas as pd
 from qt_trader.alerts import AlertNotifier
 from qt_trader.analytics import analyze_backtest
 from qt_trader.backtest import BacktestEngine
-from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker
+from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
@@ -585,6 +585,38 @@ def test_guojin_http_readonly_factory() -> None:
     assert isinstance(broker, GuojinHTTPReadOnlyBroker)
 
 
+def test_guojin_qmt_factory_and_queries() -> None:
+    config = load_config(Path("config/guojin_qmt.yaml"))
+    os.environ[config.broker.account_id_env] = "guojin-qmt-demo-001"
+
+    broker = create_broker(config)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    assert isinstance(broker, GuojinQMTBroker)
+    assert account.environment == "qmt_readonly"
+    assert account.account_id == "guojin-qmt-demo-001"
+    assert len(positions) == 1
+    assert len(orders) == 1
+
+
+def test_guojin_ptrade_factory_and_queries() -> None:
+    config = load_config(Path("config/guojin_ptrade.yaml"))
+    os.environ[config.broker.account_id_env] = "guojin-ptrade-demo-001"
+
+    broker = create_broker(config)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    assert isinstance(broker, GuojinPtradeBroker)
+    assert account.environment == "ptrade_readonly"
+    assert account.account_id == "guojin-ptrade-demo-001"
+    assert len(positions) == 1
+    assert len(orders) == 1
+
+
 def test_backtest_analytics_computes_trade_metrics() -> None:
     config = load_config(Path("config/example.yaml"))
     bars = create_data_feed(config).load()
@@ -696,3 +728,26 @@ def test_preflight_checks_detect_paper_warning_and_data_pass() -> None:
     assert check_map["data_feed"].status == "PASS"
     assert check_map["filesystem"].status == "PASS"
     assert check_map["broker"].status == "WARN"
+
+
+def test_preflight_checks_validate_terminal_broker_paths(tmp_path: Path) -> None:
+    terminal_dir = tmp_path / "qmt"
+    terminal_dir.mkdir()
+    (terminal_dir / "XtMiniQmt.exe").write_text("", encoding="utf-8")
+    state_file = tmp_path / "guojin_qmt_state.json"
+    state_file.write_text(Path("config/guojin_qmt_state.json").read_text(encoding="utf-8"), encoding="utf-8")
+
+    config = load_config(Path("config/guojin_qmt.yaml"))
+    config.storage.sqlite_path = tmp_path / "trading.db"
+    config.logging.jsonl_path = tmp_path / "logs/runtime.jsonl"
+    config.runtime.lock_path = tmp_path / "runtime/runtime.lock"
+    config.runtime.state_path = tmp_path / "runtime/state.json"
+    config.broker.terminal_path = terminal_dir
+    config.broker.terminal_state_file = state_file
+    os.environ[config.broker.account_id_env] = "guojin-qmt-demo-001"
+
+    checks = run_preflight_checks(config)
+    check_map = {check.name: check for check in checks}
+
+    assert check_map["broker"].status == "WARN"
+    assert "scaffold ready" in check_map["broker"].message

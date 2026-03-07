@@ -1,0 +1,29 @@
+{
+  "account": {
+    "account_id": "guojin-qmt-demo-001",
+    "cash": 200000.0,
+    "total_equity": 212500.0,
+    "buying_power": 180000.0,
+    "environment": "qmt_readonly"
+  },
+  "positions": [
+    {
+      "symbol": "600519.SH",
+      "quantity": 50,
+      "average_cost": 1500.0,
+      "market_price": 1520.0,
+      "market_value": 76000.0
+    }
+  ],
+  "orders": [
+    {
+      "symbol": "600519.SH",
+      "side": "BUY",
+      "quantity": 50,
+      "price": 1500.0,
+      "status": "FILLED",
+      "timestamp": "2026-03-07T09:35:00",
+      "reason": "qmt_sync_sample"
+    }
+  ]
+}

@@ -62,6 +62,10 @@ class BrokerConfig(BaseModel):
     api_secret_env: str = "BROKER_API_SECRET"
     account_id_env: str = "BROKER_ACCOUNT_ID"
     base_url: str | None = None
+    terminal_path: Path | None = None
+    executable_name: str | None = None
+    terminal_type: str | None = None
+    terminal_state_file: Path | None = None
     state_file: Path = Path("config/broker_readonly_state.json")
     account_endpoint: str = "/account"
     positions_endpoint: str = "/positions"

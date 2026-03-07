@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from qt_trader.broker.base import BrokerGateway
-from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker
+from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.paper import PaperBroker
 from qt_trader.broker.readonly import ReadOnlyBroker
@@ -103,6 +103,34 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
             api_key=os.getenv(config.broker.api_key_env, ""),
             api_secret=os.getenv(config.broker.api_secret_env, ""),
             timeout_seconds=config.broker.timeout_seconds,
+        )
+
+    if provider in {"guojin_qmt", "guojin_ptrade"}:
+        missing = [env_name for env_name in (config.broker.account_id_env,) if not os.getenv(env_name)]
+        if missing:
+            raise BrokerConfigurationError(
+                f"Broker provider '{config.broker.provider}' requires env vars: {', '.join(missing)}"
+            )
+        if config.broker.terminal_path is None:
+            raise BrokerConfigurationError(
+                f"Broker provider '{config.broker.provider}' requires broker.terminal_path"
+            )
+        if config.broker.terminal_state_file is None:
+            raise BrokerConfigurationError(
+                f"Broker provider '{config.broker.provider}' requires broker.terminal_state_file"
+            )
+        if provider == "guojin_qmt":
+            return GuojinQMTBroker(
+                account_id=os.getenv(config.broker.account_id_env, "guojin-qmt-account"),
+                terminal_path=config.broker.terminal_path,
+                state_file=config.broker.terminal_state_file,
+                executable_name=config.broker.executable_name or "XtMiniQmt.exe",
+            )
+        return GuojinPtradeBroker(
+            account_id=os.getenv(config.broker.account_id_env, "guojin-ptrade-account"),
+            terminal_path=config.broker.terminal_path,
+            state_file=config.broker.terminal_state_file,
+            executable_name=config.broker.executable_name or "PtradeClient.exe",
         )
 
     missing = [

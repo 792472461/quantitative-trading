@@ -19,6 +19,7 @@
 - broker 账户快照落库
 - HTTP 只读 broker 骨架
 - 国金证券接入准备文档
+- 国金 QMT / Ptrade 本地终端骨架
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -67,6 +68,8 @@
 - `python -m qt_trader.cli broker-sync --config config/readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/http_readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/guojin_http_readonly.yaml`
+- `python -m qt_trader.cli broker-account --config config/guojin_qmt.yaml`
+- `python -m qt_trader.cli broker-account --config config/guojin_ptrade.yaml`
 - `python -m qt_trader.cli optimize-strategy --config config/example.yaml`
 - `python -m qt_trader.cli preflight-check --config config/example.yaml`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
@@ -203,13 +206,14 @@
 
 本轮目标：
 
-- 根据最新确认信息更新国金证券接入文档
-- 明确国金已支持 QMT / Ptrade，下一步进入真实接入细节确认
+- 增加国金 QMT / Ptrade 本地终端 broker scaffold
+- 为 QMT / Ptrade 增加示例配置和 preflight 校验
+- 把国金接入路线从 HTTP 占位骨架扩展到本地终端骨架
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
-- 国金 QMT / Ptrade 适配
+- 国金 QMT / Ptrade SDK 对接
 - broker 同步调度与告警
 - 任务守护与自动恢复完善
 - dashboard Web 化

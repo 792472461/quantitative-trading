@@ -1,0 +1,29 @@
+{
+  "account": {
+    "account_id": "guojin-ptrade-demo-001",
+    "cash": 150000.0,
+    "total_equity": 168800.0,
+    "buying_power": 120000.0,
+    "environment": "ptrade_readonly"
+  },
+  "positions": [
+    {
+      "symbol": "000001.SZ",
+      "quantity": 2000,
+      "average_cost": 12.1,
+      "market_price": 12.4,
+      "market_value": 24800.0
+    }
+  ],
+  "orders": [
+    {
+      "symbol": "000001.SZ",
+      "side": "BUY",
+      "quantity": 2000,
+      "price": 12.1,
+      "status": "FILLED",
+      "timestamp": "2026-03-07T10:12:00",
+      "reason": "ptrade_sync_sample"
+    }
+  ]
+}

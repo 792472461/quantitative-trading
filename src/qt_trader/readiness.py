@@ -89,6 +89,25 @@ def _check_broker_configuration(config: AppConfig) -> PreflightCheck:
     if provider == "paper":
         return PreflightCheck("broker", "WARN", "provider=paper, safe for rehearsal but not live-ready")
 
+    if provider in {"guojin_qmt", "guojin_ptrade"}:
+        if not os.getenv(config.broker.account_id_env):
+            return PreflightCheck("broker", "FAIL", f"missing env vars: {config.broker.account_id_env}")
+        if config.broker.terminal_path is None:
+            return PreflightCheck("broker", "FAIL", "terminal broker requires broker.terminal_path")
+        terminal_path = Path(config.broker.terminal_path)
+        if not terminal_path.exists():
+            return PreflightCheck("broker", "FAIL", f"terminal path not found: {terminal_path}")
+        if config.broker.executable_name:
+            executable_path = terminal_path / config.broker.executable_name
+            if not executable_path.exists():
+                return PreflightCheck("broker", "WARN", f"terminal executable not found: {executable_path}")
+        if config.broker.terminal_state_file is None:
+            return PreflightCheck("broker", "FAIL", "terminal broker requires broker.terminal_state_file")
+        state_file = Path(config.broker.terminal_state_file)
+        if not state_file.exists():
+            return PreflightCheck("broker", "WARN", f"terminal snapshot file not found yet: {state_file}")
+        return PreflightCheck("broker", "WARN", f"provider={config.broker.provider} scaffold ready, trading disabled")
+
     missing_env = [
         env_name
         for env_name in (
