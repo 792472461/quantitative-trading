@@ -9,7 +9,7 @@ import typer
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
-from qt_trader.data.csv_data import CSVBarFeed
+from qt_trader.data.factory import create_data_feed
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
@@ -49,11 +49,7 @@ def render_summary(title: str, final_snapshot, executed_orders: int, rejected_or
 @app.command()
 def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
-    bars = CSVBarFeed(
-        csv_path=app_config.data.csv_path,
-        symbol=app_config.data.symbol,
-        datetime_column=app_config.data.datetime_column,
-    ).load()
+    bars = create_data_feed(app_config).load()
 
     engine = BacktestEngine(
         strategy=build_strategy(app_config),
@@ -76,11 +72,7 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
 @app.command()
 def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
-    bars = CSVBarFeed(
-        csv_path=app_config.data.csv_path,
-        symbol=app_config.data.symbol,
-        datetime_column=app_config.data.datetime_column,
-    ).load()
+    bars = create_data_feed(app_config).load()
     storage = SQLiteStorage(app_config.storage.sqlite_path)
 
     try:
@@ -113,6 +105,15 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
         f"Persisted to {app_config.storage.sqlite_path}: "
         f"{counts['orders']} orders, {counts['fills']} fills, {counts['snapshots']} snapshots"
     )
+
+
+@app.command()
+def fetch_data(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    bars = create_data_feed(app_config).load()
+    console.print(f"Fetched {len(bars)} bars for {app_config.data.symbol} via {app_config.data.provider}.")
+    if app_config.data.output_csv_path is not None:
+        console.print(f"Saved normalized CSV to {app_config.data.output_csv_path}")
 
 
 @app.command("version")

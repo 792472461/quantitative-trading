@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import pandas as pd
+
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
-from qt_trader.data.csv_data import CSVBarFeed
+from qt_trader.data.akshare_data import AKShareDataFeed
+from qt_trader.data.factory import create_data_feed
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
@@ -13,11 +16,7 @@ from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
 
 def test_backtest_runs_end_to_end() -> None:
     config = load_config(Path("config/example.yaml"))
-    bars = CSVBarFeed(
-        csv_path=config.data.csv_path,
-        symbol=config.data.symbol,
-        datetime_column=config.data.datetime_column,
-    ).load()
+    bars = create_data_feed(config).load()
 
     engine = BacktestEngine(
         strategy=MovingAverageCrossStrategy(
@@ -43,11 +42,7 @@ def test_backtest_runs_end_to_end() -> None:
 def test_paper_trading_persists_state(tmp_path: Path) -> None:
     config = load_config(Path("config/example.yaml"))
     config.storage.sqlite_path = tmp_path / "runtime.db"
-    bars = CSVBarFeed(
-        csv_path=config.data.csv_path,
-        symbol=config.data.symbol,
-        datetime_column=config.data.datetime_column,
-    ).load()
+    bars = create_data_feed(config).load()
     storage = SQLiteStorage(config.storage.sqlite_path)
 
     runtime = PaperTradingRuntime(
@@ -75,3 +70,33 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
     assert counts["orders"] == len(result.executed_orders) + len(result.rejected_orders)
     assert counts["fills"] == len(result.executed_orders)
     assert counts["snapshots"] == len(result.snapshots)
+
+
+def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
+    export_path = tmp_path / "akshare_export.csv"
+    feed = AKShareDataFeed(
+        symbol="600519",
+        period="daily",
+        start_date="20240101",
+        end_date="20240131",
+        adjust="qfq",
+        output_csv_path=export_path,
+    )
+
+    def fake_fetch_frame() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "日期": ["2024-01-02", "2024-01-03"],
+                "开盘": [100.0, 101.0],
+                "最高": [102.0, 103.0],
+                "最低": [99.0, 100.5],
+                "收盘": [101.5, 102.5],
+                "成交量": [10000, 12000],
+            }
+        )
+
+    feed._fetch_frame = fake_fetch_frame  # type: ignore[method-assign]
+    bars = feed.load()
+
+    assert len(bars) == 2
+    assert export_path.exists()

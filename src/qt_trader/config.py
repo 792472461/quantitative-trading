@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class BacktestConfig(BaseModel):
@@ -14,9 +14,20 @@ class BacktestConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
+    provider: str = "csv"
     csv_path: Path
     symbol: str
     datetime_column: str = "datetime"
+    period: str = "daily"
+    start_date: str | None = None
+    end_date: str | None = None
+    adjust: str = ""
+    output_csv_path: Path | None = None
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def normalize_symbol(cls, value: object) -> str:
+        return str(value)
 
 
 class StrategyConfig(BaseModel):

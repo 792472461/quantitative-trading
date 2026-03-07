@@ -1,0 +1,31 @@
+environment: paper
+data:
+  provider: akshare
+  csv_path: data/akshare_600519_daily.csv
+  output_csv_path: data/akshare_600519_daily.csv
+  symbol: 600519
+  datetime_column: datetime
+  period: daily
+  start_date: "20240101"
+  end_date: "20250301"
+  adjust: qfq
+backtest:
+  initial_cash: 200000
+  commission_rate: 0.0003
+  max_position_pct: 0.2
+  max_drawdown_pct: 0.15
+strategy:
+  name: moving_average_cross
+  fast_window: 5
+  slow_window: 20
+  trade_size: 20
+broker:
+  provider: paper
+  api_key_env: BROKER_API_KEY
+  api_secret_env: BROKER_API_SECRET
+  account_id_env: BROKER_ACCOUNT_ID
+storage:
+  sqlite_path: trading.db
+runtime:
+  polling_interval_seconds: 1.0
+  persist_snapshots: true

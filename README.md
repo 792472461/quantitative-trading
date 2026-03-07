@@ -5,7 +5,9 @@
 当前版本提供：
 
 - 策略开发接口
+- 可切换数据源
 - CSV 行情驱动的回测引擎
+- AKShare A 股历史行情接入
 - 基础风险控制
 - 券商网关抽象层
 - 本地模拟撮合网关
@@ -27,6 +29,7 @@ python -m venv .venv
 pip install -e .[dev]
 qt-trader backtest --config config\example.yaml
 qt-trader paper-trade --config config\example.yaml
+qt-trader fetch-data --config config\akshare.yaml
 ```
 
 ## 项目结构
@@ -69,9 +72,19 @@ tests/
 ```bash
 qt-trader backtest --config config\example.yaml
 qt-trader paper-trade --config config\example.yaml
+qt-trader fetch-data --config config\akshare.yaml
 qt-trader version
 ```
 
 `paper-trade` 会把订单、成交和资金快照写入 SQLite 数据库，默认文件是 `trading.db`。
+
+## 真实数据
+
+项目现在支持两种数据源：
+
+- `csv`: 本地 CSV，适合回放和研究
+- `akshare`: 拉取 A 股历史行情，适合先做真实数据接入
+
+可以参考 [config/akshare.yaml](F:/workspace/python/quantitative-trading/config/akshare.yaml) 抓取 A 股历史数据。
 
 这些接口在本项目里都已经预留好了。

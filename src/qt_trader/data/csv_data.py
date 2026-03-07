@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from qt_trader.data.base import MarketDataFeed
 from qt_trader.models import Bar
 
 
-class CSVBarFeed:
+class CSVBarFeed(MarketDataFeed):
     def __init__(self, csv_path: str | Path, symbol: str, datetime_column: str = "datetime") -> None:
         self.csv_path = Path(csv_path)
         self.symbol = symbol
