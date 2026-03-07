@@ -13,6 +13,9 @@ class BacktestConfig(BaseModel):
     stamp_duty_rate: float = Field(default=0.001, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
     max_position_pct: float = Field(default=0.2, gt=0, le=1)
+    max_total_exposure_pct: float = Field(default=0.8, gt=0, le=1)
+    max_positions: int = Field(default=10, gt=0)
+    max_symbol_quantity: int = Field(default=10000, gt=0)
     max_drawdown_pct: float = Field(default=0.12, gt=0, le=1)
 
 

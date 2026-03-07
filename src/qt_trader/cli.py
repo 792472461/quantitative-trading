@@ -71,6 +71,9 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
         risk_manager=RiskManager(
             max_position_pct=app_config.backtest.max_position_pct,
             max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
+            max_positions=app_config.backtest.max_positions,
+            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
         ),
     )
     result = engine.run(bars)
@@ -101,6 +104,9 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
         risk_manager=RiskManager(
             max_position_pct=app_config.backtest.max_position_pct,
             max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
+            max_positions=app_config.backtest.max_positions,
+            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
         ),
         storage=storage,
         persist_snapshots=app_config.runtime.persist_snapshots,
@@ -178,6 +184,9 @@ def run_session(
         risk_manager=RiskManager(
             max_position_pct=app_config.backtest.max_position_pct,
             max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
+            max_positions=app_config.backtest.max_positions,
+            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
         ),
         storage=storage,
         persist_snapshots=app_config.runtime.persist_snapshots,

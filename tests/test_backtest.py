@@ -13,7 +13,7 @@ from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
-from qt_trader.models import OrderSide
+from qt_trader.models import Order, OrderSide, Position
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
@@ -186,6 +186,46 @@ def test_multi_symbol_backtest_runs() -> None:
 
     assert result.final_snapshot is not None
     assert len({order.symbol for order in result.executed_orders}) >= 1
+
+
+def test_portfolio_risk_limits_total_exposure_and_positions() -> None:
+    risk_manager = RiskManager(
+        max_position_pct=0.6,
+        max_drawdown_pct=0.2,
+        max_total_exposure_pct=0.6,
+        max_positions=1,
+        max_symbol_quantity=100,
+    )
+    portfolio = Portfolio(initial_cash=100000)
+    snapshot = portfolio.snapshot(datetime.fromisoformat("2026-03-07T10:00:00"), {})
+
+    first_order = Order(
+        symbol="600519.SH",
+        side=OrderSide.BUY,
+        quantity=50,
+        timestamp=datetime.fromisoformat("2026-03-07T10:00:00"),
+        price=100.0,
+    )
+    accepted, _ = risk_manager.validate_order(first_order, snapshot, 100.0, None)
+    assert accepted is True
+
+    constrained_snapshot = portfolio.snapshot(
+        datetime.fromisoformat("2026-03-07T10:00:00"),
+        {"600519.SH": 100.0},
+    )
+    constrained_snapshot.positions_value = 55000
+    constrained_snapshot.positions["600519.SH"] = Position(symbol="600519.SH", quantity=50, average_cost=100.0)
+
+    second_order = Order(
+        symbol="000001.SZ",
+        side=OrderSide.BUY,
+        quantity=100,
+        timestamp=datetime.fromisoformat("2026-03-07T10:01:00"),
+        price=100.0,
+    )
+    accepted, reason = risk_manager.validate_order(second_order, constrained_snapshot, 100.0, None)
+    assert accepted is False
+    assert reason in {"total exposure limit exceeded", "max positions exceeded"}
 
 
 def test_execution_cost_model_applies_slippage_and_taxes() -> None:

@@ -11,6 +11,9 @@ backtest:
   stamp_duty_rate: 0.001
   slippage_bps: 5.0
   max_position_pct: 0.2
+  max_total_exposure_pct: 0.8
+  max_positions: 5
+  max_symbol_quantity: 1000
   max_drawdown_pct: 0.15
 strategy:
   name: moving_average_cross

@@ -10,6 +10,7 @@
 - CSV 和 AKShare 数据源
 - AKShare 失败时回退本地缓存 CSV
 - 多标的回测与模拟交易
+- 组合级风控
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -90,16 +91,23 @@
 - 建立持续维护的项目文档
 - 增加 AKShare 失败时的本地缓存回退
 
+### 2026-03-07 - `f0c3fb9`
+
+`feat: add multi-symbol trading support`
+
+- 增加多标的配置和数据样例
+- 支持多标的 CSV / AKShare 数据输入
+- 策略状态改为按 symbol 独立维护
+
 ### 2026-03-07 - In Progress
 
 本轮目标：
 
-- 增加多标的支持
+- 增加组合级风控
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
-- 多标的支持
 - 更精细的 A 股交易日历
 - 实盘券商适配
 - 监控看板
