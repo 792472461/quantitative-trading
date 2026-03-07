@@ -1,0 +1,35 @@
+[project]
+name = "quantitative-trading"
+version = "0.1.0"
+description = "Production-oriented quantitative trading foundation with backtesting, risk controls, and broker abstractions."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.2.0",
+    "pandas>=2.2.0",
+    "pydantic>=2.10.0",
+    "pyyaml>=6.0.2",
+    "rich>=13.9.0",
+    "typer>=0.16.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[project.scripts]
+qt-trader = "qt_trader.cli:app"
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

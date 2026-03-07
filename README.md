@@ -1,0 +1,77 @@
+# Quantitative Trading
+
+这是一个面向真实落地的量化交易项目骨架，不是前端演示，也不是只会跑几行示例代码的 demo。
+
+当前版本提供：
+
+- 策略开发接口
+- CSV 行情驱动的回测引擎
+- 基础风险控制
+- 券商网关抽象层
+- 本地模拟撮合网关
+- SQLite 持久化
+- Paper trading 运行时
+- CLI 运行入口
+
+## 设计目标
+
+- 先把可运行的核心链路搭起来
+- 保证后续能接入真实数据源和真实券商
+- 把风控和配置放在主链路，而不是事后补丁
+
+## 快速开始
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e .[dev]
+qt-trader backtest --config config\example.yaml
+qt-trader paper-trade --config config\example.yaml
+```
+
+## 项目结构
+
+```text
+src/qt_trader/
+  cli.py
+  config.py
+  models.py
+  portfolio.py
+  risk.py
+  backtest.py
+  data/
+  broker/
+  strategy/
+config/
+data/
+tests/
+```
+
+## 当前边界
+
+这一版已经能用于：
+
+- 本地研究策略
+- 做基础回测
+- 模拟下单和风控校验
+- 记录订单、成交和资金曲线
+- 运行 paper trading 主链路
+
+要进入真实实盘，还需要补：
+
+- 真实行情接入
+- 真实券商 API 适配实现
+- 交易日历、滑点、手续费细化
+- 监控告警
+
+## 当前命令
+
+```bash
+qt-trader backtest --config config\example.yaml
+qt-trader paper-trade --config config\example.yaml
+qt-trader version
+```
+
+`paper-trade` 会把订单、成交和资金快照写入 SQLite 数据库，默认文件是 `trading.db`。
+
+这些接口在本项目里都已经预留好了。
