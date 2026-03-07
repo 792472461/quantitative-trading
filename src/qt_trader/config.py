@@ -91,6 +91,7 @@ class RuntimeConfig(BaseModel):
     max_retries: int = Field(default=2, ge=0)
     lock_path: Path = Path("runtime.lock")
     state_path: Path = Path("runtime_state.json")
+    signal_state_path: Path = Path("signal_watch_state.json")
 
 
 class LoggingConfig(BaseModel):

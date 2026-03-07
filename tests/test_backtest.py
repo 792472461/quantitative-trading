@@ -19,7 +19,7 @@ from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
 from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
-from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
+from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore, SignalWatchStateStore
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
 from qt_trader.models import AccountInfo, Bar, Order, OrderInfo, OrderSide, Position, PositionInfo
@@ -27,7 +27,7 @@ from qt_trader.portfolio import Portfolio
 from qt_trader.readiness import run_preflight_checks
 from qt_trader.research import optimize_moving_average_parameters
 from qt_trader.risk import RiskManager
-from qt_trader.runtime import PaperTradingRuntime
+from qt_trader.runtime import PaperTradingRuntime, SignalWatchingRuntime
 from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
@@ -1055,3 +1055,48 @@ def test_preflight_checks_validate_qmt_sdk_mode(tmp_path: Path) -> None:
 
     assert check_map["broker"].status == "WARN"
     assert "sdk module ready" in check_map["broker"].message
+
+
+def test_signal_watch_alerts_latest_signal_once_and_deduplicates(tmp_path: Path) -> None:
+    bars = [
+        Bar("600519.SH", datetime.fromisoformat("2026-03-02T09:30:00"), 10, 10, 10, 10, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-03T09:30:00"), 11, 11, 11, 11, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-04T09:30:00"), 12, 12, 12, 12, 1000),
+    ]
+    storage = SQLiteStorage(tmp_path / "signal_watch.db")
+    logger = JsonLogger(tmp_path / "signal_watch.jsonl")
+    signal_state_store = SignalWatchStateStore(tmp_path / "signal_watch_state.json")
+
+    runtime = SignalWatchingRuntime(
+        strategy=MovingAverageCrossStrategy(
+            symbols=["600519.SH"],
+            fast_window=2,
+            slow_window=3,
+            trade_size=10,
+        ),
+        storage=storage,
+        logger=logger,
+        signal_state_store=signal_state_store,
+    )
+
+    first_result = runtime.scan(bars)
+    second_runtime = SignalWatchingRuntime(
+        strategy=MovingAverageCrossStrategy(
+            symbols=["600519.SH"],
+            fast_window=2,
+            slow_window=3,
+            trade_size=10,
+        ),
+        storage=storage,
+        logger=logger,
+        signal_state_store=signal_state_store,
+    )
+    second_result = second_runtime.scan(bars)
+
+    assert first_result.latest_timestamp == datetime.fromisoformat("2026-03-04T09:30:00")
+    assert len(first_result.alerted_signals) == 1
+    assert first_result.alerted_signals[0].signal.side == OrderSide.BUY
+    assert len(second_result.alerted_signals) == 0
+    assert signal_state_store.load().last_status == "completed"
+    recent_events = storage.recent_events(limit=5)
+    assert any(row["event_type"] == "signal_alerted" for row in recent_events)

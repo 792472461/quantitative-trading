@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 
 from qt_trader.alerts import AlertMessage, AlertNotifier
 from qt_trader.broker.base import BrokerGateway
-from qt_trader.guardian import RuntimeStateStore
+from qt_trader.guardian import RuntimeStateStore, SignalWatchStateStore
 from qt_trader.logging_utils import JsonLogger
-from qt_trader.models import Bar, Order, OrderStatus, PortfolioSnapshot, RuntimeEvent
+from qt_trader.models import Bar, Order, OrderStatus, PortfolioSnapshot, RuntimeEvent, Signal
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.storage import SQLiteStorage
@@ -20,6 +20,20 @@ class RuntimeResult:
     snapshots: list[PortfolioSnapshot] = field(default_factory=list)
     executed_orders: list[Order] = field(default_factory=list)
     rejected_orders: list[Order] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SignalAlertRecord:
+    signal: Signal
+    timestamp: datetime
+    price: float
+
+
+@dataclass(slots=True)
+class SignalWatchResult:
+    scanned_bars: int = 0
+    latest_timestamp: datetime | None = None
+    alerted_signals: list[SignalAlertRecord] = field(default_factory=list)
 
 
 class PaperTradingRuntime:
@@ -178,3 +192,108 @@ class PaperTradingRuntime:
                 )
             )
             self.rejected_order_alert_threshold = 10**9
+
+
+class SignalWatchingRuntime:
+    def __init__(
+        self,
+        strategy: Strategy,
+        storage: SQLiteStorage | None = None,
+        logger: JsonLogger | None = None,
+        alert_notifier: AlertNotifier | None = None,
+        signal_state_store: SignalWatchStateStore | None = None,
+    ) -> None:
+        self.strategy = strategy
+        self.storage = storage
+        self.logger = logger
+        self.alert_notifier = alert_notifier
+        self.signal_state_store = signal_state_store
+
+    def scan(self, bars: list[Bar]) -> SignalWatchResult:
+        result = SignalWatchResult(scanned_bars=len(bars))
+        if not bars:
+            self._record_event("signal_scan_empty", "WARNING", "No market data loaded")
+            return result
+
+        latest_timestamp = max(bar.timestamp for bar in bars)
+        result.latest_timestamp = latest_timestamp
+        if self.signal_state_store is not None:
+            self.signal_state_store.mark_started()
+        self._record_event("signal_scan_started", "INFO", f"Processing {len(bars)} bars")
+
+        for bar in bars:
+            signals = self.strategy.on_bar(bar)
+            if bar.timestamp != latest_timestamp:
+                continue
+            for signal in signals:
+                signal_key = self._signal_key(signal, bar)
+                if self.signal_state_store is not None and self.signal_state_store.has_seen(signal_key):
+                    continue
+                result.alerted_signals.append(SignalAlertRecord(signal=signal, timestamp=bar.timestamp, price=bar.close))
+                self._record_event(
+                    "signal_alerted",
+                    "INFO",
+                    (
+                        f"{signal.symbol} {signal.side.value} {signal.quantity} "
+                        f"@ {bar.close:.2f} reason={signal.reason}"
+                    ),
+                    bar.timestamp,
+                )
+                if self.alert_notifier is not None:
+                    self.alert_notifier.send(
+                        AlertMessage(
+                            severity="INFO",
+                            title=f"Signal {signal.side.value}",
+                            body=(
+                                f"{signal.symbol} qty={signal.quantity} "
+                                f"price={bar.close:.2f} time={bar.timestamp.isoformat()} reason={signal.reason}"
+                            ),
+                        )
+                    )
+                if self.signal_state_store is not None:
+                    self.signal_state_store.mark_seen(signal_key)
+
+        self._record_event(
+            "signal_scan_finished",
+            "INFO",
+            f"latest_bar={latest_timestamp.isoformat()} alerted={len(result.alerted_signals)}",
+        )
+        if self.signal_state_store is not None:
+            self.signal_state_store.mark_completed()
+        return result
+
+    def _signal_key(self, signal: Signal, bar: Bar) -> str:
+        return "|".join(
+            [
+                bar.timestamp.isoformat(),
+                signal.symbol,
+                signal.side.value,
+                str(signal.quantity),
+                signal.reason,
+            ]
+        )
+
+    def _record_event(
+        self,
+        event_type: str,
+        severity: str,
+        message: str,
+        timestamp: datetime | None = None,
+    ) -> None:
+        event = RuntimeEvent(
+            event_type=event_type,
+            timestamp=timestamp or datetime.now(timezone.utc),
+            severity=severity,
+            message=message,
+        )
+        if self.storage is not None:
+            self.storage.save_event(event)
+        if self.logger is not None:
+            self.logger.log(
+                event_type,
+                {
+                    "severity": severity,
+                    "message": message,
+                    "event_timestamp": event.timestamp.isoformat(),
+                },
+            )

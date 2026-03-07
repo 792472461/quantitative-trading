@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import time
 
 from rich.console import Console
 from rich.table import Table
@@ -11,14 +12,14 @@ from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
 from qt_trader.data.factory import create_data_feed
-from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
+from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore, SignalWatchStateStore
 from qt_trader.market import TradingCalendar
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.portfolio import Portfolio
 from qt_trader.readiness import run_preflight_checks
 from qt_trader.research import optimize_moving_average_parameters
 from qt_trader.risk import RiskManager
-from qt_trader.runtime import PaperTradingRuntime
+from qt_trader.runtime import PaperTradingRuntime, SignalWatchingRuntime
 from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
@@ -99,6 +100,37 @@ def render_market_regime_metrics(regime_metrics) -> None:
             str(item.fill_count),
         )
     console.print(table)
+
+
+def render_signal_watch_result(result) -> None:
+    summary = Table(title="Signal Watch Summary")
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Scanned Bars", str(result.scanned_bars))
+    summary.add_row("Latest Bar", "-" if result.latest_timestamp is None else result.latest_timestamp.isoformat())
+    summary.add_row("New Alerts", str(len(result.alerted_signals)))
+    console.print(summary)
+
+    signal_table = Table(title="New Trade Signals")
+    signal_table.add_column("Timestamp")
+    signal_table.add_column("Symbol")
+    signal_table.add_column("Side")
+    signal_table.add_column("Quantity", justify="right")
+    signal_table.add_column("Price", justify="right")
+    signal_table.add_column("Reason")
+    if result.alerted_signals:
+        for item in result.alerted_signals:
+            signal_table.add_row(
+                item.timestamp.isoformat(),
+                item.signal.symbol,
+                item.signal.side.value,
+                str(item.signal.quantity),
+                f"{item.price:.2f}",
+                item.signal.reason,
+            )
+    else:
+        signal_table.add_row("-", "-", "-", "0", "-", "-")
+    console.print(signal_table)
 
 
 def format_delta(value: float | int | None, precision: int = 2) -> str:
@@ -233,6 +265,57 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
         f"{counts['snapshots']} snapshots, {counts['events']} events"
     )
     console.print(f"Structured log written to {app_config.logging.jsonl_path}")
+
+
+@app.command()
+def signal_watch(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    iterations: int = typer.Option(
+        1,
+        min=0,
+        help="Number of scan cycles. Use 0 to keep running until stopped.",
+    ),
+    force: bool = typer.Option(False, help="Scan even if market is currently closed."),
+) -> None:
+    app_config = load_config(config)
+    storage, logger, alert_notifier, _ = build_runtime_dependencies(app_config)
+    scheduler = SessionScheduler(TradingCalendar(app_config.market))
+    signal_state_store = SignalWatchStateStore(app_config.runtime.signal_state_path)
+
+    cycle = 0
+    try:
+        with RuntimeLock(app_config.runtime.lock_path):
+            while iterations == 0 or cycle < iterations:
+                cycle += 1
+                if not force and not scheduler.should_run_now():
+                    console.print(f"[yellow]Signal watch waiting: {scheduler.describe()}[/yellow]")
+                    if iterations != 0 and cycle >= iterations:
+                        break
+                    time.sleep(app_config.runtime.polling_interval_seconds)
+                    continue
+
+                try:
+                    bars = create_data_feed(app_config).load()
+                    runtime = SignalWatchingRuntime(
+                        strategy=build_strategy(app_config),
+                        storage=storage,
+                        logger=logger,
+                        alert_notifier=alert_notifier,
+                        signal_state_store=signal_state_store,
+                    )
+                    result = runtime.scan(bars)
+                except Exception as exc:  # noqa: BLE001
+                    signal_state_store.mark_failed(str(exc))
+                    console.print(f"[red]Signal scan failed: {exc}[/red]")
+                    raise typer.Exit(code=1) from exc
+
+                render_signal_watch_result(result)
+                if iterations != 0 and cycle >= iterations:
+                    break
+                time.sleep(app_config.runtime.polling_interval_seconds)
+    except RuntimeLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()

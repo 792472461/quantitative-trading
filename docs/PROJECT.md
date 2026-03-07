@@ -80,6 +80,7 @@
 - `python -m qt_trader.cli optimize-strategy --config config/example.yaml`
 - `python -m qt_trader.cli preflight-check --config config/example.yaml`
 - `python -m qt_trader.cli backtest --config config/market_regime.yaml`
+- `python -m qt_trader.cli signal-watch --config config/example.yaml --iterations 1 --force`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
 - 回测分析会附带输出 Sharpe、Calmar、Expectancy
 - `broker-sync` 会输出相对上一版快照的资金、持仓、委托数量变化
@@ -87,6 +88,7 @@
 - `dashboard` 会显示最近回测记录和历史最优参数组合
 - `optimize-strategy` 会批量扫描双均线参数并将结果写入 SQLite
 - `preflight-check` 会检查策略参数、数据加载、路径可写性、告警与 broker 就绪状态
+- `signal-watch` 会持续扫描最新行情，只发出买卖信号提醒，不会真实下单
 
 ## Iteration Log
 
@@ -221,6 +223,7 @@
 - 将选股 skill 相关文件统一改为 UTF-8 编码，便于跨平台查看
 - 将选股 skill 默认筛选范围收紧为 A 股主板，排除港股、创业板、科创板
 - 演示一版按政策主线筛选的 A 股主板观察池输出效果
+- 增加只提醒买卖信号的 `signal-watch` 常驻扫描命令
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
