@@ -53,6 +53,10 @@ class StrategyConfig(BaseModel):
     fast_window: int = Field(default=5, gt=1)
     slow_window: int = Field(default=20, gt=1)
     trade_size: int = Field(default=100, gt=0)
+    market_filter_enabled: bool = False
+    benchmark_symbol: str | None = None
+    market_fast_window: int = Field(default=5, gt=1)
+    market_slow_window: int = Field(default=20, gt=1)
 
 
 class BrokerConfig(BaseModel):

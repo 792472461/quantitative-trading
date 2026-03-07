@@ -30,10 +30,17 @@ def run_preflight_checks(config: AppConfig) -> list[PreflightCheck]:
 def _check_strategy(config: AppConfig) -> PreflightCheck:
     if config.strategy.name == "moving_average_cross" and config.strategy.fast_window >= config.strategy.slow_window:
         return PreflightCheck("strategy", "FAIL", "fast_window must be smaller than slow_window")
+    if config.strategy.market_filter_enabled and not config.strategy.benchmark_symbol:
+        return PreflightCheck("strategy", "FAIL", "benchmark_symbol is required when market_filter_enabled=true")
+    if config.strategy.market_fast_window >= config.strategy.market_slow_window:
+        return PreflightCheck("strategy", "FAIL", "market_fast_window must be smaller than market_slow_window")
     return PreflightCheck(
         "strategy",
         "PASS",
-        f"{config.strategy.name} fast={config.strategy.fast_window} slow={config.strategy.slow_window}",
+        (
+            f"{config.strategy.name} fast={config.strategy.fast_window} slow={config.strategy.slow_window} "
+            f"market_filter={config.strategy.market_filter_enabled}"
+        ),
     )
 
 

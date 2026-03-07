@@ -35,11 +35,17 @@ def build_strategy(config):
         raise ValueError(f"Unsupported strategy: {config.strategy.name}")
 
     symbols = config.data.symbols or [config.data.symbol]
+    benchmark_symbol = config.strategy.benchmark_symbol
+    trade_symbols = [symbol for symbol in symbols if symbol != benchmark_symbol]
     return MovingAverageCrossStrategy(
-        symbols=symbols,
+        symbols=trade_symbols,
         fast_window=config.strategy.fast_window,
         slow_window=config.strategy.slow_window,
         trade_size=config.strategy.trade_size,
+        market_filter_enabled=config.strategy.market_filter_enabled,
+        benchmark_symbol=benchmark_symbol,
+        market_fast_window=config.strategy.market_fast_window,
+        market_slow_window=config.strategy.market_slow_window,
     )
 
 

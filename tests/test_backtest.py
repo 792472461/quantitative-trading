@@ -22,7 +22,7 @@ from qt_trader.data.factory import create_data_feed
 from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
-from qt_trader.models import AccountInfo, Order, OrderInfo, OrderSide, Position, PositionInfo
+from qt_trader.models import AccountInfo, Bar, Order, OrderInfo, OrderSide, Position, PositionInfo
 from qt_trader.portfolio import Portfolio
 from qt_trader.readiness import run_preflight_checks
 from qt_trader.research import optimize_moving_average_parameters
@@ -221,6 +221,40 @@ def test_multi_symbol_backtest_runs() -> None:
 
     assert result.final_snapshot is not None
     assert len({order.symbol for order in result.executed_orders}) >= 1
+
+
+def test_market_filter_blocks_buy_until_benchmark_trend_turns_positive() -> None:
+    strategy = MovingAverageCrossStrategy(
+        symbols=["600519.SH"],
+        fast_window=2,
+        slow_window=3,
+        trade_size=10,
+        market_filter_enabled=True,
+        benchmark_symbol="000300.SH",
+        market_fast_window=2,
+        market_slow_window=3,
+    )
+    bars = [
+        Bar("000300.SH", datetime.fromisoformat("2026-03-02T09:30:00"), 10, 10, 10, 10, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-02T09:31:00"), 10, 10, 10, 10, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-03T09:30:00"), 9, 9, 9, 9, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-03T09:31:00"), 11, 11, 11, 11, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-04T09:30:00"), 8, 8, 8, 8, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-04T09:31:00"), 12, 12, 12, 12, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-05T09:30:00"), 9, 9, 9, 9, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-05T09:31:00"), 13, 13, 13, 13, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-06T09:30:00"), 10, 10, 10, 10, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-06T09:31:00"), 14, 14, 14, 14, 1000),
+    ]
+
+    signals = []
+    for bar in bars:
+        signals.extend(strategy.on_bar(bar))
+
+    assert len(signals) == 1
+    assert signals[0].symbol == "600519.SH"
+    assert signals[0].side == OrderSide.BUY
+    assert signals[0].reason == "fast_ma_breakout_market_confirmed"
 
 
 def test_portfolio_risk_limits_total_exposure_and_positions() -> None:

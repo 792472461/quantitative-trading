@@ -34,6 +34,7 @@
 - broker 同步变更摘要
 - 参数扫描与回测结果归档
 - 实盘前 preflight 检查
+- 市场状态过滤策略增强
 
 ## Architecture
 
@@ -210,14 +211,14 @@
 
 本轮目标：
 
-- 增加 xtquant 查询 adapter 骨架
-- 支持 userdata path 配置与查询对象映射
-- 继续保持 mock 与 qmt_sdk 两条路线并行可测
+- 给双均线增加市场状态过滤层
+- 支持通过 benchmark 均线限制开仓
+- 为后续分市场阶段回测打基础
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
-- 国金 QMT 真实环境联调
+- 分阶段回测与市场分析报表
 - broker 同步调度与告警
 - 任务守护与自动恢复完善
 - dashboard Web 化
