@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 from qt_trader.models import Fill, Order, PortfolioSnapshot, RuntimeEvent
+
+
+@dataclass(slots=True)
+class DashboardSummary:
+    orders: int
+    fills: int
+    events: int
+    latest_equity: float | None
+    latest_cash: float | None
+    latest_drawdown: float | None
 
 
 class SQLiteStorage:
@@ -152,3 +163,79 @@ class SQLiteStorage:
             snapshots = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
             events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         return {"orders": orders, "fills": fills, "snapshots": snapshots, "events": events}
+
+    def dashboard_summary(self) -> DashboardSummary:
+        counts = self.counts()
+        with self._connect() as conn:
+            latest_snapshot = conn.execute(
+                """
+                SELECT total_value, cash, drawdown
+                FROM snapshots
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+        if latest_snapshot is None:
+            return DashboardSummary(
+                orders=counts["orders"],
+                fills=counts["fills"],
+                events=counts["events"],
+                latest_equity=None,
+                latest_cash=None,
+                latest_drawdown=None,
+            )
+
+        return DashboardSummary(
+            orders=counts["orders"],
+            fills=counts["fills"],
+            events=counts["events"],
+            latest_equity=float(latest_snapshot[0]),
+            latest_cash=float(latest_snapshot[1]),
+            latest_drawdown=float(latest_snapshot[2]),
+        )
+
+    def recent_events(self, limit: int = 10) -> list[dict[str, str]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT timestamp, severity, event_type, message
+                FROM events
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "timestamp": str(row[0]),
+                "severity": str(row[1]),
+                "event_type": str(row[2]),
+                "message": str(row[3]),
+            }
+            for row in rows
+        ]
+
+    def symbol_fill_summary(self) -> list[dict[str, float | str | int]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    symbol,
+                    COUNT(*) AS fill_count,
+                    SUM(quantity) AS total_quantity,
+                    SUM(commission + stamp_duty) AS total_fees
+                FROM fills
+                GROUP BY symbol
+                ORDER BY symbol
+                """
+            ).fetchall()
+        return [
+            {
+                "symbol": str(row[0]),
+                "fill_count": int(row[1]),
+                "total_quantity": int(row[2]),
+                "total_fees": float(row[3]),
+            }
+            for row in rows
+        ]

@@ -277,3 +277,42 @@ def test_runtime_lock_and_state_store(tmp_path: Path) -> None:
     assert state_store.load().last_status == "failed"
     state_store.mark_completed()
     assert state_store.load().last_status == "completed"
+
+
+def test_storage_dashboard_queries(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "dashboard.db")
+    config = load_config(Path("config/example.yaml"))
+    config.storage.sqlite_path = tmp_path / "dashboard.db"
+    config.logging.jsonl_path = tmp_path / "runtime.jsonl"
+    config.runtime.state_path = tmp_path / "runtime_state.json"
+    bars = create_data_feed(config).load()
+
+    runtime = PaperTradingRuntime(
+        strategy=MovingAverageCrossStrategy(
+            symbols=config.data.symbols or [config.data.symbol],
+            fast_window=config.strategy.fast_window,
+            slow_window=config.strategy.slow_window,
+            trade_size=config.strategy.trade_size,
+        ),
+        broker=create_broker(config),
+        portfolio=Portfolio(initial_cash=config.backtest.initial_cash),
+        risk_manager=RiskManager(
+            max_position_pct=config.backtest.max_position_pct,
+            max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
+        ),
+        storage=storage,
+        state_store=RuntimeStateStore(config.runtime.state_path),
+    )
+    runtime.run(bars)
+
+    summary = storage.dashboard_summary()
+    recent_events = storage.recent_events(limit=3)
+    symbol_summary = storage.symbol_fill_summary()
+
+    assert summary.orders >= 0
+    assert summary.events > 0
+    assert len(recent_events) <= 3
+    assert isinstance(symbol_summary, list)

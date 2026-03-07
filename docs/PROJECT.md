@@ -13,6 +13,7 @@
 - 组合级风控
 - A 股节假日和调休日历
 - 任务守护与自动恢复基础
+- 监控看板基础版 CLI
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -51,6 +52,7 @@
 - `python -m qt_trader.cli run-session --config config/example.yaml --force`
 - `python -m qt_trader.cli send-test-alert --config config/example.yaml`
 - `python -m qt_trader.cli runtime-state --config config/example.yaml`
+- `python -m qt_trader.cli dashboard --config config/example.yaml`
 
 ## Iteration Log
 
@@ -118,11 +120,19 @@
 - 支持 holiday file 覆盖规则
 - 支持节假日与调休工作日判断
 
+### 2026-03-07 - `540ec74`
+
+`feat: add runtime guard and recovery state`
+
+- 增加运行锁，防止重复启动
+- 增加运行状态文件
+- 增加重试和状态查看命令
+
 ### 2026-03-07 - In Progress
 
 本轮目标：
 
-- 增加任务守护与自动恢复基础
+- 增加监控看板基础版
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities

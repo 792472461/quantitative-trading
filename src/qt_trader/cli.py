@@ -251,6 +251,58 @@ def runtime_state(config: Path = typer.Option(..., exists=True, readable=True, h
 
 
 @app.command()
+def dashboard(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    event_limit: int = typer.Option(5, min=1, max=50, help="Number of recent events to display."),
+) -> None:
+    app_config = load_config(config)
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    summary = storage.dashboard_summary()
+
+    overview = Table(title="Dashboard Overview")
+    overview.add_column("Metric")
+    overview.add_column("Value", justify="right")
+    overview.add_row("Orders", str(summary.orders))
+    overview.add_row("Fills", str(summary.fills))
+    overview.add_row("Events", str(summary.events))
+    overview.add_row("Latest Equity", "-" if summary.latest_equity is None else f"{summary.latest_equity:.2f}")
+    overview.add_row("Latest Cash", "-" if summary.latest_cash is None else f"{summary.latest_cash:.2f}")
+    overview.add_row("Latest Drawdown", "-" if summary.latest_drawdown is None else f"{summary.latest_drawdown:.2%}")
+    console.print(overview)
+
+    symbol_rows = storage.symbol_fill_summary()
+    symbol_table = Table(title="Fill Summary By Symbol")
+    symbol_table.add_column("Symbol")
+    symbol_table.add_column("Fills", justify="right")
+    symbol_table.add_column("Quantity", justify="right")
+    symbol_table.add_column("Fees", justify="right")
+    if symbol_rows:
+        for row in symbol_rows:
+            symbol_table.add_row(
+                str(row["symbol"]),
+                str(row["fill_count"]),
+                str(row["total_quantity"]),
+                f"{float(row['total_fees']):.2f}",
+            )
+    else:
+        symbol_table.add_row("-", "0", "0", "0.00")
+    console.print(symbol_table)
+
+    event_rows = storage.recent_events(event_limit)
+    event_table = Table(title="Recent Events")
+    event_table.add_column("Timestamp")
+    event_table.add_column("Severity")
+    event_table.add_column("Type")
+    event_table.add_column("Message")
+    if event_rows:
+        for row in event_rows:
+            event_table.add_row(row["timestamp"], row["severity"], row["event_type"], row["message"])
+    else:
+        event_table.add_row("-", "-", "-", "-")
+    console.print(event_table)
+
+
+@app.command()
 def send_test_alert(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
     notifier = AlertNotifier(app_config.alert)
