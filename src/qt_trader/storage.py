@@ -20,6 +20,39 @@ class DashboardSummary:
     latest_drawdown: float | None
 
 
+@dataclass(slots=True)
+class BrokerSyncSummary:
+    account_id: str
+    broker: str
+    environment: str
+    synced_at: str
+    previous_synced_at: str | None
+    cash: float
+    total_equity: float
+    buying_power: float
+    cash_change: float | None
+    total_equity_change: float | None
+    buying_power_change: float | None
+    position_count: int
+    position_added: int
+    position_removed: int
+    position_changed: int
+    broker_order_count: int
+    broker_order_change: int | None
+
+
+@dataclass(slots=True)
+class BrokerPositionChange:
+    symbol: str
+    status: str
+    previous_quantity: int
+    current_quantity: int
+    quantity_change: int
+    previous_market_value: float
+    current_market_value: float
+    market_value_change: float
+
+
 class SQLiteStorage:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -383,3 +416,216 @@ class SQLiteStorage:
             "buying_power": float(row[5]),
             "environment": str(row[6]),
         }
+
+    def latest_broker_sync_summary(self, account_id: str | None = None) -> BrokerSyncSummary | None:
+        with self._connect() as conn:
+            latest_row = self._latest_broker_account_row(conn, account_id)
+            if latest_row is None:
+                return None
+
+            latest_synced_at = str(latest_row[0])
+            resolved_account_id = str(latest_row[1])
+            previous_synced_at = self._previous_broker_synced_at(conn, resolved_account_id, latest_synced_at)
+
+            current_positions = self._position_snapshot(conn, resolved_account_id, latest_synced_at)
+            previous_positions = (
+                self._position_snapshot(conn, resolved_account_id, previous_synced_at) if previous_synced_at else {}
+            )
+            position_added, position_removed, position_changed = self._summarize_position_changes(
+                previous_positions,
+                current_positions,
+            )
+            current_order_count = self._broker_order_count(conn, resolved_account_id, latest_synced_at)
+            previous_order_count = (
+                self._broker_order_count(conn, resolved_account_id, previous_synced_at) if previous_synced_at else None
+            )
+
+        cash = float(latest_row[3])
+        total_equity = float(latest_row[4])
+        buying_power = float(latest_row[5])
+        previous_account_row = None
+        if previous_synced_at is not None:
+            with self._connect() as conn:
+                previous_account_row = conn.execute(
+                    """
+                    SELECT cash, total_equity, buying_power
+                    FROM broker_accounts
+                    WHERE account_id = ? AND synced_at = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (resolved_account_id, previous_synced_at),
+                ).fetchone()
+
+        cash_change = None
+        total_equity_change = None
+        buying_power_change = None
+        if previous_account_row is not None:
+            cash_change = cash - float(previous_account_row[0])
+            total_equity_change = total_equity - float(previous_account_row[1])
+            buying_power_change = buying_power - float(previous_account_row[2])
+
+        return BrokerSyncSummary(
+            account_id=resolved_account_id,
+            broker=str(latest_row[2]),
+            environment=str(latest_row[6]),
+            synced_at=latest_synced_at,
+            previous_synced_at=previous_synced_at,
+            cash=cash,
+            total_equity=total_equity,
+            buying_power=buying_power,
+            cash_change=cash_change,
+            total_equity_change=total_equity_change,
+            buying_power_change=buying_power_change,
+            position_count=len(current_positions),
+            position_added=position_added,
+            position_removed=position_removed,
+            position_changed=position_changed,
+            broker_order_count=current_order_count,
+            broker_order_change=None if previous_order_count is None else current_order_count - previous_order_count,
+        )
+
+    def latest_broker_position_changes(
+        self,
+        account_id: str | None = None,
+        limit: int = 5,
+    ) -> list[BrokerPositionChange]:
+        with self._connect() as conn:
+            latest_row = self._latest_broker_account_row(conn, account_id)
+            if latest_row is None:
+                return []
+
+            latest_synced_at = str(latest_row[0])
+            resolved_account_id = str(latest_row[1])
+            previous_synced_at = self._previous_broker_synced_at(conn, resolved_account_id, latest_synced_at)
+            if previous_synced_at is None:
+                return []
+
+            current_positions = self._position_snapshot(conn, resolved_account_id, latest_synced_at)
+            previous_positions = self._position_snapshot(conn, resolved_account_id, previous_synced_at)
+
+        changes: list[BrokerPositionChange] = []
+        for symbol in sorted(set(previous_positions) | set(current_positions)):
+            previous_quantity, previous_market_value = previous_positions.get(symbol, (0, 0.0))
+            current_quantity, current_market_value = current_positions.get(symbol, (0, 0.0))
+            quantity_change = current_quantity - previous_quantity
+            market_value_change = current_market_value - previous_market_value
+            if previous_quantity == current_quantity and abs(market_value_change) < 1e-9:
+                continue
+            if symbol not in previous_positions:
+                status = "ADDED"
+            elif symbol not in current_positions:
+                status = "REMOVED"
+            else:
+                status = "UPDATED"
+            changes.append(
+                BrokerPositionChange(
+                    symbol=symbol,
+                    status=status,
+                    previous_quantity=previous_quantity,
+                    current_quantity=current_quantity,
+                    quantity_change=quantity_change,
+                    previous_market_value=previous_market_value,
+                    current_market_value=current_market_value,
+                    market_value_change=market_value_change,
+                )
+            )
+
+        changes.sort(key=lambda item: abs(item.market_value_change), reverse=True)
+        return changes[:limit]
+
+    def _latest_broker_account_row(
+        self,
+        conn: sqlite3.Connection,
+        account_id: str | None,
+    ) -> tuple[object, ...] | None:
+        if account_id is None:
+            return conn.execute(
+                """
+                SELECT synced_at, account_id, broker, cash, total_equity, buying_power, environment
+                FROM broker_accounts
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return conn.execute(
+            """
+            SELECT synced_at, account_id, broker, cash, total_equity, buying_power, environment
+            FROM broker_accounts
+            WHERE account_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (account_id,),
+        ).fetchone()
+
+    def _previous_broker_synced_at(
+        self,
+        conn: sqlite3.Connection,
+        account_id: str,
+        latest_synced_at: str,
+    ) -> str | None:
+        row = conn.execute(
+            """
+            SELECT synced_at
+            FROM broker_accounts
+            WHERE account_id = ? AND synced_at <> ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (account_id, latest_synced_at),
+        ).fetchone()
+        return None if row is None else str(row[0])
+
+    def _position_snapshot(
+        self,
+        conn: sqlite3.Connection,
+        account_id: str,
+        synced_at: str,
+    ) -> dict[str, tuple[int, float]]:
+        rows = conn.execute(
+            """
+            SELECT symbol, quantity, market_value
+            FROM broker_positions
+            WHERE account_id = ? AND synced_at = ?
+            """,
+            (account_id, synced_at),
+        ).fetchall()
+        return {str(row[0]): (int(row[1]), float(row[2])) for row in rows}
+
+    def _broker_order_count(
+        self,
+        conn: sqlite3.Connection,
+        account_id: str,
+        synced_at: str,
+    ) -> int:
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM broker_orders
+            WHERE account_id = ? AND synced_at = ?
+            """,
+            (account_id, synced_at),
+        ).fetchone()
+        return 0 if row is None else int(row[0])
+
+    def _summarize_position_changes(
+        self,
+        previous_positions: dict[str, tuple[int, float]],
+        current_positions: dict[str, tuple[int, float]],
+    ) -> tuple[int, int, int]:
+        added = 0
+        removed = 0
+        changed = 0
+        for symbol in set(previous_positions) | set(current_positions):
+            if symbol not in previous_positions:
+                added += 1
+                continue
+            if symbol not in current_positions:
+                removed += 1
+                continue
+            previous_quantity, previous_market_value = previous_positions[symbol]
+            current_quantity, current_market_value = current_positions[symbol]
+            if previous_quantity != current_quantity or abs(current_market_value - previous_market_value) >= 1e-9:
+                changed += 1
+        return added, removed, changed

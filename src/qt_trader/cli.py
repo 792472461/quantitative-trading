@@ -70,6 +70,12 @@ def render_backtest_metrics(metrics) -> None:
     console.print(summary)
 
 
+def format_delta(value: float | int | None, precision: int = 2) -> str:
+    if value is None:
+        return "-"
+    return f"{value:+.{precision}f}"
+
+
 def build_runtime_dependencies(app_config):
     storage = SQLiteStorage(app_config.storage.sqlite_path)
     logger = JsonLogger(app_config.logging.jsonl_path)
@@ -333,10 +339,43 @@ def broker_sync(config: Path = typer.Option(..., exists=True, readable=True, hel
     orders = broker.get_orders()
     synced_at = datetime.now().isoformat()
     storage.save_broker_snapshot(account, positions, orders, synced_at)
+    summary = storage.latest_broker_sync_summary(account.account_id)
     console.print(
         f"Broker snapshot synced at {synced_at}: "
         f"{len(positions)} positions, {len(orders)} orders for {account.account_id}"
     )
+    if summary is None:
+        return
+
+    summary_table = Table(title="Broker Sync Delta")
+    summary_table.add_column("Metric")
+    summary_table.add_column("Value", justify="right")
+    summary_table.add_row("Previous Sync", summary.previous_synced_at or "-")
+    summary_table.add_row("Cash Change", format_delta(summary.cash_change))
+    summary_table.add_row("Equity Change", format_delta(summary.total_equity_change))
+    summary_table.add_row("Buying Power Change", format_delta(summary.buying_power_change))
+    summary_table.add_row("Position Added", str(summary.position_added))
+    summary_table.add_row("Position Removed", str(summary.position_removed))
+    summary_table.add_row("Position Updated", str(summary.position_changed))
+    summary_table.add_row("Broker Orders", str(summary.broker_order_count))
+    summary_table.add_row("Broker Order Delta", "-" if summary.broker_order_change is None else str(summary.broker_order_change))
+    console.print(summary_table)
+
+    position_changes = storage.latest_broker_position_changes(account.account_id, limit=5)
+    if position_changes:
+        position_table = Table(title="Latest Position Changes")
+        position_table.add_column("Symbol")
+        position_table.add_column("Status")
+        position_table.add_column("Qty Delta", justify="right")
+        position_table.add_column("Value Delta", justify="right")
+        for change in position_changes:
+            position_table.add_row(
+                change.symbol,
+                change.status,
+                format_delta(change.quantity_change, precision=0),
+                format_delta(change.market_value_change),
+            )
+        console.print(position_table)
 
 
 @app.command()
@@ -381,6 +420,51 @@ def dashboard(
         broker_table.add_row("Cash", "-")
         broker_table.add_row("Total Equity", "-")
     console.print(broker_table)
+
+    broker_sync_summary = storage.latest_broker_sync_summary()
+    broker_change_table = Table(title="Latest Broker Sync Delta")
+    broker_change_table.add_column("Metric")
+    broker_change_table.add_column("Value", justify="right")
+    if broker_sync_summary is not None:
+        broker_change_table.add_row("Current Sync", broker_sync_summary.synced_at)
+        broker_change_table.add_row("Previous Sync", broker_sync_summary.previous_synced_at or "-")
+        broker_change_table.add_row("Cash Change", format_delta(broker_sync_summary.cash_change))
+        broker_change_table.add_row("Equity Change", format_delta(broker_sync_summary.total_equity_change))
+        broker_change_table.add_row("Position Added", str(broker_sync_summary.position_added))
+        broker_change_table.add_row("Position Removed", str(broker_sync_summary.position_removed))
+        broker_change_table.add_row("Position Updated", str(broker_sync_summary.position_changed))
+        broker_change_table.add_row(
+            "Broker Order Delta",
+            "-" if broker_sync_summary.broker_order_change is None else str(broker_sync_summary.broker_order_change),
+        )
+    else:
+        broker_change_table.add_row("Current Sync", "-")
+        broker_change_table.add_row("Previous Sync", "-")
+        broker_change_table.add_row("Cash Change", "-")
+        broker_change_table.add_row("Equity Change", "-")
+        broker_change_table.add_row("Position Added", "0")
+        broker_change_table.add_row("Position Removed", "0")
+        broker_change_table.add_row("Position Updated", "0")
+        broker_change_table.add_row("Broker Order Delta", "-")
+    console.print(broker_change_table)
+
+    broker_position_changes = storage.latest_broker_position_changes(limit=5)
+    broker_position_change_table = Table(title="Latest Broker Position Changes")
+    broker_position_change_table.add_column("Symbol")
+    broker_position_change_table.add_column("Status")
+    broker_position_change_table.add_column("Qty Delta", justify="right")
+    broker_position_change_table.add_column("Value Delta", justify="right")
+    if broker_position_changes:
+        for change in broker_position_changes:
+            broker_position_change_table.add_row(
+                change.symbol,
+                change.status,
+                format_delta(change.quantity_change, precision=0),
+                format_delta(change.market_value_change),
+            )
+    else:
+        broker_position_change_table.add_row("-", "-", "-", "-")
+    console.print(broker_position_change_table)
 
     symbol_rows = storage.symbol_fill_summary()
     symbol_table = Table(title="Fill Summary By Symbol")

@@ -27,6 +27,7 @@
 - 结构化日志与告警
 - 更真实的交易成本模型
 - 回测绩效分析
+- broker 同步变更摘要
 
 ## Architecture
 
@@ -65,6 +66,8 @@
 - `python -m qt_trader.cli broker-account --config config/http_readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/guojin_http_readonly.yaml`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
+- `broker-sync` 会输出相对上一版快照的资金、持仓、委托数量变化
+- `dashboard` 会显示最近一次 broker 同步变化摘要和持仓变化列表
 
 ## Iteration Log
 
@@ -188,15 +191,16 @@
 - 增加国金接入配置和准备文档
 - 明确国金为主接入目标
 
-### 2026-03-07 - In Progress
+### 2026-03-07 - Latest Iteration
 
 本轮目标：
 
-- 增加策略说明和回测绩效分析
+- 增加 broker 同步变更摘要
+- 让 dashboard 展示最近一次 broker 同步变化
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
 - 实盘券商适配
-- 监控看板
+- broker 同步调度与告警
 - 任务守护与自动恢复完善

@@ -18,7 +18,7 @@ from qt_trader.data.factory import create_data_feed
 from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
-from qt_trader.models import Order, OrderSide, Position
+from qt_trader.models import AccountInfo, Order, OrderInfo, OrderSide, Position, PositionInfo
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
@@ -392,6 +392,107 @@ def test_broker_snapshot_sync_to_storage(tmp_path: Path) -> None:
     assert counts["broker_orders"] == 2
     assert latest_account is not None
     assert latest_account["account_id"] == "readonly-demo-001"
+
+
+def test_broker_sync_summary_detects_account_and_position_changes(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "broker_sync_summary.db")
+    account = AccountInfo(
+        account_id="readonly-demo-001",
+        broker="readonly",
+        cash=100000.0,
+        total_equity=120000.0,
+        buying_power=80000.0,
+        environment="readonly",
+    )
+    previous_positions = [
+        PositionInfo(
+            symbol="600519.SH",
+            quantity=10,
+            average_cost=1500.0,
+            market_price=1550.0,
+            market_value=15500.0,
+        )
+    ]
+    current_positions = [
+        PositionInfo(
+            symbol="600519.SH",
+            quantity=15,
+            average_cost=1500.0,
+            market_price=1560.0,
+            market_value=23400.0,
+        ),
+        PositionInfo(
+            symbol="000001.SZ",
+            quantity=20,
+            average_cost=12.0,
+            market_price=12.5,
+            market_value=250.0,
+        ),
+    ]
+    previous_orders = [
+        OrderInfo(
+            symbol="600519.SH",
+            side="BUY",
+            quantity=10,
+            price=1500.0,
+            status="FILLED",
+            timestamp=datetime.fromisoformat("2026-03-07T09:35:00"),
+            reason="previous_sync",
+        )
+    ]
+    current_orders = [
+        OrderInfo(
+            symbol="600519.SH",
+            side="BUY",
+            quantity=10,
+            price=1500.0,
+            status="FILLED",
+            timestamp=datetime.fromisoformat("2026-03-07T09:35:00"),
+            reason="previous_sync",
+        ),
+        OrderInfo(
+            symbol="000001.SZ",
+            side="BUY",
+            quantity=20,
+            price=12.0,
+            status="NEW",
+            timestamp=datetime.fromisoformat("2026-03-07T10:05:00"),
+            reason="latest_sync",
+        ),
+    ]
+
+    storage.save_broker_snapshot(account, previous_positions, previous_orders, "2026-03-07T10:00:00")
+    storage.save_broker_snapshot(
+        AccountInfo(
+            account_id="readonly-demo-001",
+            broker="readonly",
+            cash=98000.0,
+            total_equity=123000.0,
+            buying_power=76000.0,
+            environment="readonly",
+        ),
+        current_positions,
+        current_orders,
+        "2026-03-07T11:00:00",
+    )
+
+    summary = storage.latest_broker_sync_summary()
+    position_changes = storage.latest_broker_position_changes(limit=5)
+
+    assert summary is not None
+    assert summary.previous_synced_at == "2026-03-07T10:00:00"
+    assert summary.cash_change == -2000.0
+    assert summary.total_equity_change == 3000.0
+    assert summary.position_added == 1
+    assert summary.position_removed == 0
+    assert summary.position_changed == 1
+    assert summary.broker_order_count == 2
+    assert summary.broker_order_change == 1
+    assert len(position_changes) == 2
+    assert position_changes[0].symbol == "600519.SH"
+    assert position_changes[0].status == "UPDATED"
+    assert position_changes[1].symbol == "000001.SZ"
+    assert position_changes[1].status == "ADDED"
 
 
 def test_http_readonly_broker_queries() -> None:
