@@ -26,6 +26,7 @@ from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
 def test_backtest_runs_end_to_end() -> None:
     config = load_config(Path("config/example.yaml"))
     bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
 
     engine = BacktestEngine(
         strategy=MovingAverageCrossStrategy(
@@ -34,11 +35,14 @@ def test_backtest_runs_end_to_end() -> None:
             slow_window=config.strategy.slow_window,
             trade_size=config.strategy.trade_size,
         ),
-        broker=create_broker(config),
-        portfolio=Portfolio(initial_cash=config.backtest.initial_cash),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
         risk_manager=RiskManager(
             max_position_pct=config.backtest.max_position_pct,
             max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
         ),
     )
 
@@ -58,6 +62,7 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
     logger = JsonLogger(config.logging.jsonl_path)
     alert_notifier = AlertNotifier(config.alert, output_path=tmp_path / "alerts.log")
     state_store = RuntimeStateStore(config.runtime.state_path)
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
 
     runtime = PaperTradingRuntime(
         strategy=MovingAverageCrossStrategy(
@@ -66,11 +71,14 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
             slow_window=config.strategy.slow_window,
             trade_size=config.strategy.trade_size,
         ),
-        broker=create_broker(config),
-        portfolio=Portfolio(initial_cash=config.backtest.initial_cash),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
         risk_manager=RiskManager(
             max_position_pct=config.backtest.max_position_pct,
             max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
         ),
         storage=storage,
         persist_snapshots=True,
@@ -176,6 +184,7 @@ def test_trading_calendar_and_scheduler() -> None:
 def test_multi_symbol_backtest_runs() -> None:
     config = load_config(Path("config/multi_symbol.yaml"))
     bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
 
     engine = BacktestEngine(
         strategy=MovingAverageCrossStrategy(
@@ -184,11 +193,14 @@ def test_multi_symbol_backtest_runs() -> None:
             slow_window=config.strategy.slow_window,
             trade_size=config.strategy.trade_size,
         ),
-        broker=create_broker(config),
-        portfolio=Portfolio(initial_cash=config.backtest.initial_cash),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
         risk_manager=RiskManager(
             max_position_pct=config.backtest.max_position_pct,
             max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
         ),
     )
 
@@ -286,6 +298,7 @@ def test_storage_dashboard_queries(tmp_path: Path) -> None:
     config.logging.jsonl_path = tmp_path / "runtime.jsonl"
     config.runtime.state_path = tmp_path / "runtime_state.json"
     bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
 
     runtime = PaperTradingRuntime(
         strategy=MovingAverageCrossStrategy(
@@ -294,8 +307,8 @@ def test_storage_dashboard_queries(tmp_path: Path) -> None:
             slow_window=config.strategy.slow_window,
             trade_size=config.strategy.trade_size,
         ),
-        broker=create_broker(config),
-        portfolio=Portfolio(initial_cash=config.backtest.initial_cash),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
         risk_manager=RiskManager(
             max_position_pct=config.backtest.max_position_pct,
             max_drawdown_pct=config.backtest.max_drawdown_pct,
@@ -316,3 +329,18 @@ def test_storage_dashboard_queries(tmp_path: Path) -> None:
     assert summary.events > 0
     assert len(recent_events) <= 3
     assert isinstance(symbol_summary, list)
+
+
+def test_paper_broker_account_queries() -> None:
+    config = load_config(Path("config/example.yaml"))
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
+    broker = create_broker(config, portfolio=portfolio)
+
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    assert account.broker == "paper"
+    assert account.cash == config.backtest.initial_cash
+    assert positions == []
+    assert orders == []

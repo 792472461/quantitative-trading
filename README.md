@@ -17,6 +17,7 @@
 - 更真实的交易成本模型
 - 组合级风控
 - 任务守护与自动恢复基础
+- 券商账户/持仓/委托查询骨架
 - 券商网关抽象层
 - 本地模拟撮合网关
 - SQLite 持久化
@@ -43,6 +44,7 @@ qt-trader market-status --config config\example.yaml
 qt-trader send-test-alert --config config\example.yaml
 qt-trader runtime-state --config config\example.yaml
 qt-trader dashboard --config config\example.yaml
+qt-trader broker-account --config config\example.yaml
 ```
 
 ## 项目结构
@@ -75,6 +77,7 @@ tests/
 - 根据节假日和调休判断是否应运行
 - 防止重复启动并记录上次运行状态
 - 直接查看账户概览、最近事件和成交摘要
+- 查看券商账户、持仓和委托骨架信息
 - 记录订单、成交和资金曲线
 - 运行 paper trading 主链路
 - 基于交易时段控制是否执行
@@ -99,6 +102,7 @@ qt-trader run-session --config config\example.yaml --force
 qt-trader send-test-alert --config config\example.yaml
 qt-trader runtime-state --config config\example.yaml
 qt-trader dashboard --config config\example.yaml
+qt-trader broker-account --config config\example.yaml
 qt-trader version
 ```
 

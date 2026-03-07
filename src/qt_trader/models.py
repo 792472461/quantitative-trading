@@ -85,3 +85,33 @@ class RuntimeEvent:
     timestamp: datetime
     severity: str
     message: str
+
+
+@dataclass(slots=True)
+class AccountInfo:
+    account_id: str
+    broker: str
+    cash: float
+    total_equity: float
+    buying_power: float
+    environment: str
+
+
+@dataclass(slots=True)
+class PositionInfo:
+    symbol: str
+    quantity: int
+    average_cost: float
+    market_price: float
+    market_value: float
+
+
+@dataclass(slots=True)
+class OrderInfo:
+    symbol: str
+    side: str
+    quantity: int
+    price: float | None
+    status: str
+    timestamp: datetime
+    reason: str = ""

@@ -6,13 +6,14 @@ from qt_trader.broker.base import BrokerGateway
 from qt_trader.broker.paper import PaperBroker
 from qt_trader.config import AppConfig
 from qt_trader.costs import ExecutionCostModel
+from qt_trader.portfolio import Portfolio
 
 
 class BrokerConfigurationError(RuntimeError):
     pass
 
 
-def create_broker(config: AppConfig) -> BrokerGateway:
+def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> BrokerGateway:
     provider = config.broker.provider.lower()
     if provider == "paper":
         return PaperBroker(
@@ -21,7 +22,8 @@ def create_broker(config: AppConfig) -> BrokerGateway:
                 min_commission=config.backtest.min_commission,
                 stamp_duty_rate=config.backtest.stamp_duty_rate,
                 slippage_bps=config.backtest.slippage_bps,
-            )
+            ),
+            portfolio=portfolio,
         )
 
     missing = [

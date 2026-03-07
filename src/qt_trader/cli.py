@@ -65,11 +65,12 @@ def build_runtime_dependencies(app_config):
 def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
     bars = create_data_feed(app_config).load()
+    portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
 
     engine = BacktestEngine(
         strategy=build_strategy(app_config),
-        broker=create_broker(app_config),
-        portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
+        broker=create_broker(app_config, portfolio=portfolio),
+        portfolio=portfolio,
         risk_manager=RiskManager(
             max_position_pct=app_config.backtest.max_position_pct,
             max_drawdown_pct=app_config.backtest.max_drawdown_pct,
@@ -92,9 +93,10 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
     app_config = load_config(config)
     bars = create_data_feed(app_config).load()
     storage, logger, alert_notifier, state_store = build_runtime_dependencies(app_config)
+    portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
 
     try:
-        broker = create_broker(app_config)
+        broker = create_broker(app_config, portfolio=portfolio)
     except BrokerConfigurationError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -104,7 +106,7 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
             runtime = PaperTradingRuntime(
                 strategy=build_strategy(app_config),
                 broker=broker,
-                portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
+                portfolio=portfolio,
                 risk_manager=RiskManager(
                     max_position_pct=app_config.backtest.max_position_pct,
                     max_drawdown_pct=app_config.backtest.max_drawdown_pct,
@@ -187,15 +189,17 @@ def run_session(
     storage, logger, alert_notifier, state_store = build_runtime_dependencies(app_config)
     attempts = 0
     result = None
+    portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
     try:
         with RuntimeLock(app_config.runtime.lock_path):
             while attempts <= app_config.runtime.max_retries:
                 attempts += 1
                 try:
+                    broker = create_broker(app_config, portfolio=portfolio)
                     runtime = PaperTradingRuntime(
                         strategy=build_strategy(app_config),
-                        broker=create_broker(app_config),
-                        portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
+                        broker=broker,
+                        portfolio=portfolio,
                         risk_manager=RiskManager(
                             max_position_pct=app_config.backtest.max_position_pct,
                             max_drawdown_pct=app_config.backtest.max_drawdown_pct,
@@ -248,6 +252,56 @@ def runtime_state(config: Path = typer.Option(..., exists=True, readable=True, h
     summary.add_row("Retry Count", str(state.retry_count))
     summary.add_row("Last Error", state.last_error or "-")
     console.print(summary)
+
+
+@app.command()
+def broker_account(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
+    broker = create_broker(app_config, portfolio=portfolio)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    account_table = Table(title="Broker Account")
+    account_table.add_column("Metric")
+    account_table.add_column("Value", justify="right")
+    account_table.add_row("Broker", account.broker)
+    account_table.add_row("Account ID", account.account_id)
+    account_table.add_row("Environment", account.environment)
+    account_table.add_row("Cash", f"{account.cash:.2f}")
+    account_table.add_row("Total Equity", f"{account.total_equity:.2f}")
+    account_table.add_row("Buying Power", f"{account.buying_power:.2f}")
+    console.print(account_table)
+
+    position_table = Table(title="Broker Positions")
+    position_table.add_column("Symbol")
+    position_table.add_column("Quantity", justify="right")
+    position_table.add_column("Avg Cost", justify="right")
+    position_table.add_column("Market Value", justify="right")
+    if positions:
+        for position in positions:
+            position_table.add_row(
+                position.symbol,
+                str(position.quantity),
+                f"{position.average_cost:.2f}",
+                f"{position.market_value:.2f}",
+            )
+    else:
+        position_table.add_row("-", "0", "0.00", "0.00")
+    console.print(position_table)
+
+    order_table = Table(title="Broker Orders")
+    order_table.add_column("Symbol")
+    order_table.add_column("Side")
+    order_table.add_column("Quantity", justify="right")
+    order_table.add_column("Status")
+    if orders:
+        for order in orders[-5:]:
+            order_table.add_row(order.symbol, order.side, str(order.quantity), order.status)
+    else:
+        order_table.add_row("-", "-", "0", "-")
+    console.print(order_table)
 
 
 @app.command()

@@ -14,6 +14,7 @@
 - A 股节假日和调休日历
 - 任务守护与自动恢复基础
 - 监控看板基础版 CLI
+- 券商账户同步骨架
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -53,6 +54,7 @@
 - `python -m qt_trader.cli send-test-alert --config config/example.yaml`
 - `python -m qt_trader.cli runtime-state --config config/example.yaml`
 - `python -m qt_trader.cli dashboard --config config/example.yaml`
+- `python -m qt_trader.cli broker-account --config config/example.yaml`
 
 ## Iteration Log
 
@@ -128,11 +130,19 @@
 - 增加运行状态文件
 - 增加重试和状态查看命令
 
+### 2026-03-07 - `9ec842c`
+
+`feat: add dashboard reporting commands`
+
+- 增加 dashboard 报表命令
+- 支持账户概览、事件和成交摘要查询
+- 为 CLI 监控看板打基础
+
 ### 2026-03-07 - In Progress
 
 本轮目标：
 
-- 增加监控看板基础版
+- 增加实盘券商适配骨架
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
