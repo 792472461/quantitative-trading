@@ -48,6 +48,7 @@ qt-trader broker-account --config config\example.yaml
 qt-trader broker-account --config config\readonly_broker.yaml
 qt-trader broker-sync --config config\readonly_broker.yaml
 qt-trader broker-account --config config\http_readonly_broker.yaml
+qt-trader broker-account --config config\guojin_http_readonly.yaml
 ```
 
 ## 项目结构
@@ -84,6 +85,7 @@ tests/
 - 用只读 broker 配置做真实券商联调演练
 - 把只读 broker 的账户快照同步进本地数据库
 - 使用 HTTP 只读 broker 骨架对接真实券商 API
+- 以国金证券为主的只读接入准备文档和配置
 - 记录订单、成交和资金曲线
 - 运行 paper trading 主链路
 - 基于交易时段控制是否执行
@@ -112,6 +114,7 @@ qt-trader broker-account --config config\example.yaml
 qt-trader broker-account --config config\readonly_broker.yaml
 qt-trader broker-sync --config config\readonly_broker.yaml
 qt-trader broker-account --config config\http_readonly_broker.yaml
+qt-trader broker-account --config config\guojin_http_readonly.yaml
 qt-trader version
 ```
 
@@ -124,6 +127,7 @@ qt-trader version
 ## 项目文档
 
 持续维护文档在 [docs/PROJECT.md](F:/workspace/python/quantitative-trading/docs/PROJECT.md)，里面会记录项目概览、架构和每次迭代内容。
+国金证券接入准备文档在 [docs/BROKER_GUOJIN.md](F:/workspace/python/quantitative-trading/docs/BROKER_GUOJIN.md)。
 
 ## 真实数据
 

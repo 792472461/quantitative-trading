@@ -18,6 +18,7 @@
 - 只读 broker 联调样例
 - broker 账户快照落库
 - HTTP 只读 broker 骨架
+- 国金证券接入准备文档
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -61,6 +62,7 @@
 - `python -m qt_trader.cli broker-account --config config/readonly_broker.yaml`
 - `python -m qt_trader.cli broker-sync --config config/readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/http_readonly_broker.yaml`
+- `python -m qt_trader.cli broker-account --config config/guojin_http_readonly.yaml`
 
 ## Iteration Log
 
@@ -167,6 +169,14 @@
 - 增加 broker-sync 命令
 - 支持只读 broker 账户快照落库
 - 让 dashboard 复用同步后的账户摘要
+
+### 2026-03-07 - `b1a1ed6`
+
+`feat: add http readonly broker scaffold`
+
+- 增加通用 HTTP 只读 broker 骨架
+- 支持 account / positions / orders 接口契约
+- 为真实券商 API 只读联调打基础
 
 ### 2026-03-07 - In Progress
 

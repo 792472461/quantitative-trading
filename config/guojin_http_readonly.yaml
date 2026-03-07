@@ -1,0 +1,59 @@
+environment: readonly
+data:
+  csv_path: data/sample_daily.csv
+  symbol: 600519.SH
+  symbols: [600519.SH]
+  datetime_column: datetime
+backtest:
+  initial_cash: 200000
+  commission_rate: 0.0003
+  min_commission: 5.0
+  stamp_duty_rate: 0.001
+  slippage_bps: 5.0
+  max_position_pct: 0.2
+  max_total_exposure_pct: 0.8
+  max_positions: 5
+  max_symbol_quantity: 1000
+  max_drawdown_pct: 0.15
+strategy:
+  name: moving_average_cross
+  fast_window: 5
+  slow_window: 20
+  trade_size: 20
+broker:
+  provider: guojin_http_readonly
+  read_only: true
+  api_key_env: BROKER_API_KEY
+  api_secret_env: BROKER_API_SECRET
+  account_id_env: BROKER_ACCOUNT_ID
+  base_url: https://api.gjzq.example.com/trade/v1
+  account_endpoint: /account
+  positions_endpoint: /positions
+  orders_endpoint: /orders
+  timeout_seconds: 10.0
+storage:
+  sqlite_path: trading.db
+runtime:
+  polling_interval_seconds: 1.0
+  persist_snapshots: true
+  max_retries: 2
+  lock_path: runtime.lock
+  state_path: runtime_state.json
+logging:
+  level: INFO
+  jsonl_path: logs/runtime.jsonl
+alert:
+  enabled: true
+  channels: [stdout, file]
+  max_drawdown_pct: 0.03
+  rejected_order_threshold: 1
+market:
+  timezone: Asia/Shanghai
+  weekdays: [0, 1, 2, 3, 4]
+  morning_start: "09:30"
+  morning_end: "11:30"
+  afternoon_start: "13:00"
+  afternoon_end: "15:00"
+  holidays: []
+  makeup_workdays: []
+  holiday_files: [config/calendar_ashare_2026.json]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from qt_trader.broker.base import BrokerGateway
+from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.paper import PaperBroker
 from qt_trader.broker.readonly import ReadOnlyBroker
@@ -68,6 +69,33 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
         return HTTPReadOnlyBroker(
             broker_name="http_readonly",
             account_id=os.getenv(config.broker.account_id_env, "http-readonly-account"),
+            base_url=config.broker.base_url,
+            account_endpoint=config.broker.account_endpoint,
+            positions_endpoint=config.broker.positions_endpoint,
+            orders_endpoint=config.broker.orders_endpoint,
+            api_key=os.getenv(config.broker.api_key_env, ""),
+            api_secret=os.getenv(config.broker.api_secret_env, ""),
+            timeout_seconds=config.broker.timeout_seconds,
+        )
+
+    if provider == "guojin_http_readonly":
+        missing = [
+            env_name
+            for env_name in (
+                config.broker.api_key_env,
+                config.broker.api_secret_env,
+                config.broker.account_id_env,
+            )
+            if not os.getenv(env_name)
+        ]
+        if missing:
+            raise BrokerConfigurationError(
+                f"Broker provider '{config.broker.provider}' requires env vars: {', '.join(missing)}"
+            )
+        if not config.broker.base_url:
+            raise BrokerConfigurationError("Broker provider 'guojin_http_readonly' requires broker.base_url")
+        return GuojinHTTPReadOnlyBroker(
+            account_id=os.getenv(config.broker.account_id_env, "guojin-readonly-account"),
             base_url=config.broker.base_url,
             account_endpoint=config.broker.account_endpoint,
             positions_endpoint=config.broker.positions_endpoint,

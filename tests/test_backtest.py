@@ -7,6 +7,7 @@ import pandas as pd
 
 from qt_trader.alerts import AlertNotifier
 from qt_trader.backtest import BacktestEngine
+from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
@@ -463,3 +464,14 @@ def test_http_readonly_broker_queries() -> None:
     assert account.account_id == "http-demo-001"
     assert len(positions) == 1
     assert len(orders) == 1
+
+
+def test_guojin_http_readonly_factory() -> None:
+    config = load_config(Path("config/guojin_http_readonly.yaml"))
+    os.environ[config.broker.api_key_env] = "demo-key"
+    os.environ[config.broker.api_secret_env] = "demo-secret"
+    os.environ[config.broker.account_id_env] = "guojin-demo-001"
+
+    broker = create_broker(config)
+
+    assert isinstance(broker, GuojinHTTPReadOnlyBroker)
