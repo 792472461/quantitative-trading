@@ -28,6 +28,8 @@
 - 更真实的交易成本模型
 - 回测绩效分析
 - broker 同步变更摘要
+- 参数扫描与回测结果归档
+- 实盘前 preflight 检查
 
 ## Architecture
 
@@ -65,9 +67,15 @@
 - `python -m qt_trader.cli broker-sync --config config/readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/http_readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/guojin_http_readonly.yaml`
+- `python -m qt_trader.cli optimize-strategy --config config/example.yaml`
+- `python -m qt_trader.cli preflight-check --config config/example.yaml`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
+- 回测分析会附带输出 Sharpe、Calmar、Expectancy
 - `broker-sync` 会输出相对上一版快照的资金、持仓、委托数量变化
 - `dashboard` 会显示最近一次 broker 同步变化摘要和持仓变化列表
+- `dashboard` 会显示最近回测记录和历史最优参数组合
+- `optimize-strategy` 会批量扫描双均线参数并将结果写入 SQLite
+- `preflight-check` 会检查策略参数、数据加载、路径可写性、告警与 broker 就绪状态
 
 ## Iteration Log
 
@@ -195,8 +203,9 @@
 
 本轮目标：
 
-- 增加 broker 同步变更摘要
-- 让 dashboard 展示最近一次 broker 同步变化
+- 增加参数扫描与回测结果归档
+- 扩展 dashboard 展示最近回测与最优回测组合
+- 增加 preflight-check，为实盘前准备提供基础自检
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
@@ -204,3 +213,4 @@
 - 实盘券商适配
 - broker 同步调度与告警
 - 任务守护与自动恢复完善
+- dashboard Web 化

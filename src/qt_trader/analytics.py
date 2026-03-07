@@ -18,18 +18,23 @@ class BacktestMetrics:
     average_loss: float
     trade_count: int
     equity_volatility_pct: float
+    sharpe_ratio: float
+    calmar_ratio: float
+    expectancy: float
 
 
 def analyze_backtest(result: BacktestResult, initial_cash: float) -> BacktestMetrics:
     snapshots = result.snapshots
     if not snapshots:
-        return BacktestMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0)
+        return BacktestMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0)
 
     final_equity = snapshots[-1].total_value
     total_return = 0.0 if initial_cash == 0 else (final_equity / initial_cash - 1) * 100
     max_drawdown = max(snapshot.drawdown for snapshot in snapshots) * 100
     annualized_return = _annualized_return_pct(snapshots, initial_cash, final_equity)
-    equity_volatility = _equity_volatility_pct(snapshots)
+    period_returns = _equity_returns(snapshots)
+    equity_volatility = _equity_volatility_pct(period_returns)
+    sharpe_ratio = _sharpe_ratio(period_returns)
     trade_pnls = _round_trip_pnls(result.fills)
 
     wins = [pnl for pnl in trade_pnls if pnl > 0]
@@ -41,6 +46,8 @@ def analyze_backtest(result: BacktestResult, initial_cash: float) -> BacktestMet
     profit_factor = 0.0 if gross_loss == 0 else gross_profit / gross_loss
     average_win = 0.0 if not wins else gross_profit / len(wins)
     average_loss = 0.0 if not losses else abs(sum(losses)) / len(losses)
+    expectancy = 0.0 if trade_count == 0 else sum(trade_pnls) / trade_count
+    calmar_ratio = 0.0 if max_drawdown == 0 else annualized_return / max_drawdown
 
     return BacktestMetrics(
         total_return_pct=total_return,
@@ -52,6 +59,9 @@ def analyze_backtest(result: BacktestResult, initial_cash: float) -> BacktestMet
         average_loss=average_loss,
         trade_count=trade_count,
         equity_volatility_pct=equity_volatility,
+        sharpe_ratio=sharpe_ratio,
+        calmar_ratio=calmar_ratio,
+        expectancy=expectancy,
     )
 
 
@@ -65,19 +75,33 @@ def _annualized_return_pct(snapshots, initial_cash: float, final_equity: float) 
     return ((final_equity / initial_cash) ** (1 / years) - 1) * 100
 
 
-def _equity_volatility_pct(snapshots) -> float:
+def _equity_returns(snapshots) -> list[float]:
     if len(snapshots) < 2:
-        return 0.0
-    returns = []
+        return []
+    returns: list[float] = []
     for previous, current in zip(snapshots, snapshots[1:]):
         if previous.total_value <= 0:
             continue
         returns.append(current.total_value / previous.total_value - 1)
+    return returns
+
+
+def _equity_volatility_pct(returns: list[float]) -> float:
     if len(returns) < 2:
         return 0.0
     mean = sum(returns) / len(returns)
     variance = sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)
     return sqrt(variance) * 100
+
+
+def _sharpe_ratio(returns: list[float]) -> float:
+    if len(returns) < 2:
+        return 0.0
+    mean = sum(returns) / len(returns)
+    variance = sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)
+    if variance <= 0:
+        return 0.0
+    return mean / sqrt(variance) * sqrt(252)
 
 
 def _round_trip_pnls(fills: list[Fill]) -> list[float]:

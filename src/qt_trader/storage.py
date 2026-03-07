@@ -12,6 +12,7 @@ class DashboardSummary:
     orders: int
     fills: int
     events: int
+    backtest_runs: int
     synced_accounts: int
     synced_positions: int
     synced_broker_orders: int
@@ -51,6 +52,26 @@ class BrokerPositionChange:
     previous_market_value: float
     current_market_value: float
     market_value_change: float
+
+
+@dataclass(slots=True)
+class BacktestRunRecord:
+    created_at: str
+    strategy_name: str
+    symbols: str
+    fast_window: int
+    slow_window: int
+    trade_size: int
+    total_return_pct: float
+    annualized_return_pct: float
+    max_drawdown_pct: float
+    win_rate_pct: float
+    profit_factor: float
+    trade_count: int
+    sharpe_ratio: float
+    calmar_ratio: float
+    expectancy: float
+    final_equity: float
 
 
 class SQLiteStorage:
@@ -160,6 +181,32 @@ class SQLiteStorage:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS backtest_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    strategy_name TEXT NOT NULL,
+                    symbols TEXT NOT NULL,
+                    fast_window INTEGER NOT NULL,
+                    slow_window INTEGER NOT NULL,
+                    trade_size INTEGER NOT NULL,
+                    total_return_pct REAL NOT NULL,
+                    annualized_return_pct REAL NOT NULL,
+                    max_drawdown_pct REAL NOT NULL,
+                    win_rate_pct REAL NOT NULL,
+                    profit_factor REAL NOT NULL,
+                    average_win REAL NOT NULL,
+                    average_loss REAL NOT NULL,
+                    trade_count INTEGER NOT NULL,
+                    equity_volatility_pct REAL NOT NULL,
+                    sharpe_ratio REAL NOT NULL,
+                    calmar_ratio REAL NOT NULL,
+                    expectancy REAL NOT NULL,
+                    final_equity REAL NOT NULL
+                )
+                """
+            )
 
     def _ensure_fill_columns(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(fills)").fetchall()}
@@ -242,6 +289,7 @@ class SQLiteStorage:
             fills = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
             snapshots = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
             events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            backtest_runs = conn.execute("SELECT COUNT(*) FROM backtest_runs").fetchone()[0]
             broker_accounts = conn.execute("SELECT COUNT(*) FROM broker_accounts").fetchone()[0]
             broker_positions = conn.execute("SELECT COUNT(*) FROM broker_positions").fetchone()[0]
             broker_orders = conn.execute("SELECT COUNT(*) FROM broker_orders").fetchone()[0]
@@ -250,10 +298,72 @@ class SQLiteStorage:
             "fills": fills,
             "snapshots": snapshots,
             "events": events,
+            "backtest_runs": backtest_runs,
             "broker_accounts": broker_accounts,
             "broker_positions": broker_positions,
             "broker_orders": broker_orders,
         }
+
+    def save_backtest_run(
+        self,
+        *,
+        created_at: str,
+        strategy_name: str,
+        symbols: list[str],
+        fast_window: int,
+        slow_window: int,
+        trade_size: int,
+        metrics,
+        final_equity: float,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO backtest_runs (
+                    created_at,
+                    strategy_name,
+                    symbols,
+                    fast_window,
+                    slow_window,
+                    trade_size,
+                    total_return_pct,
+                    annualized_return_pct,
+                    max_drawdown_pct,
+                    win_rate_pct,
+                    profit_factor,
+                    average_win,
+                    average_loss,
+                    trade_count,
+                    equity_volatility_pct,
+                    sharpe_ratio,
+                    calmar_ratio,
+                    expectancy,
+                    final_equity
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_at,
+                    strategy_name,
+                    ",".join(symbols),
+                    fast_window,
+                    slow_window,
+                    trade_size,
+                    metrics.total_return_pct,
+                    metrics.annualized_return_pct,
+                    metrics.max_drawdown_pct,
+                    metrics.win_rate_pct,
+                    metrics.profit_factor,
+                    metrics.average_win,
+                    metrics.average_loss,
+                    metrics.trade_count,
+                    metrics.equity_volatility_pct,
+                    metrics.sharpe_ratio,
+                    metrics.calmar_ratio,
+                    metrics.expectancy,
+                    final_equity,
+                ),
+            )
 
     def save_broker_snapshot(
         self,
@@ -330,6 +440,7 @@ class SQLiteStorage:
                 orders=counts["orders"],
                 fills=counts["fills"],
                 events=counts["events"],
+                backtest_runs=counts["backtest_runs"],
                 synced_accounts=counts["broker_accounts"],
                 synced_positions=counts["broker_positions"],
                 synced_broker_orders=counts["broker_orders"],
@@ -342,6 +453,7 @@ class SQLiteStorage:
             orders=counts["orders"],
             fills=counts["fills"],
             events=counts["events"],
+            backtest_runs=counts["backtest_runs"],
             synced_accounts=counts["broker_accounts"],
             synced_positions=counts["broker_positions"],
             synced_broker_orders=counts["broker_orders"],
@@ -349,6 +461,64 @@ class SQLiteStorage:
             latest_cash=float(latest_snapshot[1]),
             latest_drawdown=float(latest_snapshot[2]),
         )
+
+    def latest_backtest_runs(self, limit: int = 5) -> list[BacktestRunRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    created_at,
+                    strategy_name,
+                    symbols,
+                    fast_window,
+                    slow_window,
+                    trade_size,
+                    total_return_pct,
+                    annualized_return_pct,
+                    max_drawdown_pct,
+                    win_rate_pct,
+                    profit_factor,
+                    trade_count,
+                    sharpe_ratio,
+                    calmar_ratio,
+                    expectancy,
+                    final_equity
+                FROM backtest_runs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._row_to_backtest_run(row) for row in rows]
+
+    def best_backtest_runs(self, limit: int = 5) -> list[BacktestRunRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    created_at,
+                    strategy_name,
+                    symbols,
+                    fast_window,
+                    slow_window,
+                    trade_size,
+                    total_return_pct,
+                    annualized_return_pct,
+                    max_drawdown_pct,
+                    win_rate_pct,
+                    profit_factor,
+                    trade_count,
+                    sharpe_ratio,
+                    calmar_ratio,
+                    expectancy,
+                    final_equity
+                FROM backtest_runs
+                ORDER BY total_return_pct DESC, sharpe_ratio DESC, max_drawdown_pct ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._row_to_backtest_run(row) for row in rows]
 
     def recent_events(self, limit: int = 10) -> list[dict[str, str]]:
         with self._connect() as conn:
@@ -629,3 +799,23 @@ class SQLiteStorage:
             if previous_quantity != current_quantity or abs(current_market_value - previous_market_value) >= 1e-9:
                 changed += 1
         return added, removed, changed
+
+    def _row_to_backtest_run(self, row: tuple[object, ...]) -> BacktestRunRecord:
+        return BacktestRunRecord(
+            created_at=str(row[0]),
+            strategy_name=str(row[1]),
+            symbols=str(row[2]),
+            fast_window=int(row[3]),
+            slow_window=int(row[4]),
+            trade_size=int(row[5]),
+            total_return_pct=float(row[6]),
+            annualized_return_pct=float(row[7]),
+            max_drawdown_pct=float(row[8]),
+            win_rate_pct=float(row[9]),
+            profit_factor=float(row[10]),
+            trade_count=int(row[11]),
+            sharpe_ratio=float(row[12]),
+            calmar_ratio=float(row[13]),
+            expectancy=float(row[14]),
+            final_equity=float(row[15]),
+        )

@@ -20,6 +20,8 @@ from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
 from qt_trader.models import AccountInfo, Order, OrderInfo, OrderSide, Position, PositionInfo
 from qt_trader.portfolio import Portfolio
+from qt_trader.readiness import run_preflight_checks
+from qt_trader.research import optimize_moving_average_parameters
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
 from qt_trader.scheduler import SessionScheduler
@@ -334,6 +336,7 @@ def test_storage_dashboard_queries(tmp_path: Path) -> None:
 
     assert summary.orders >= 0
     assert summary.events > 0
+    assert summary.backtest_runs == 0
     assert len(recent_events) <= 3
     assert isinstance(symbol_summary, list)
 
@@ -609,3 +612,87 @@ def test_backtest_analytics_computes_trade_metrics() -> None:
 
     assert metrics.trade_count == len(result.fills) // 2
     assert metrics.total_return_pct != 0
+    assert metrics.sharpe_ratio != 0
+    assert metrics.expectancy != 0
+
+
+def test_parameter_sweep_returns_ranked_results() -> None:
+    config = load_config(Path("config/example.yaml"))
+    bars = create_data_feed(config).load()
+
+    results = optimize_moving_average_parameters(
+        bars=bars,
+        config=config,
+        fast_windows=[3, 5],
+        slow_windows=[10, 20],
+        trade_size=20,
+    )
+
+    assert len(results) == 4
+    assert results[0].metrics.total_return_pct >= results[-1].metrics.total_return_pct
+    assert all(result.fast_window < result.slow_window for result in results)
+
+
+def test_backtest_run_storage_queries(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "backtest_runs.db")
+    config = load_config(Path("config/example.yaml"))
+    bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
+    engine = BacktestEngine(
+        strategy=MovingAverageCrossStrategy(
+            symbols=config.data.symbols or [config.data.symbol],
+            fast_window=config.strategy.fast_window,
+            slow_window=config.strategy.slow_window,
+            trade_size=config.strategy.trade_size,
+        ),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
+        risk_manager=RiskManager(
+            max_position_pct=config.backtest.max_position_pct,
+            max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
+        ),
+    )
+    result = engine.run(bars)
+    metrics = analyze_backtest(result, config.backtest.initial_cash)
+    final_snapshot = result.final_snapshot
+    assert final_snapshot is not None
+
+    storage.save_backtest_run(
+        created_at="2026-03-07T12:00:00",
+        strategy_name=config.strategy.name,
+        symbols=config.data.symbols or [config.data.symbol],
+        fast_window=config.strategy.fast_window,
+        slow_window=config.strategy.slow_window,
+        trade_size=config.strategy.trade_size,
+        metrics=metrics,
+        final_equity=final_snapshot.total_value,
+    )
+
+    summary = storage.dashboard_summary()
+    latest_runs = storage.latest_backtest_runs(limit=3)
+    best_runs = storage.best_backtest_runs(limit=3)
+
+    assert summary.backtest_runs == 1
+    assert len(latest_runs) == 1
+    assert round(latest_runs[0].sharpe_ratio, 6) == round(metrics.sharpe_ratio, 6)
+    assert len(best_runs) == 1
+    assert best_runs[0].strategy_name == config.strategy.name
+
+
+def test_preflight_checks_detect_paper_warning_and_data_pass() -> None:
+    config = load_config(Path("config/example.yaml"))
+    config.storage.sqlite_path = Path("tmp_preflight.db")
+    config.logging.jsonl_path = Path("tmp_logs/runtime.jsonl")
+    config.runtime.lock_path = Path("tmp_runtime/runtime.lock")
+    config.runtime.state_path = Path("tmp_runtime/state.json")
+
+    checks = run_preflight_checks(config)
+    check_map = {check.name: check for check in checks}
+
+    assert check_map["strategy"].status == "PASS"
+    assert check_map["data_feed"].status == "PASS"
+    assert check_map["filesystem"].status == "PASS"
+    assert check_map["broker"].status == "WARN"

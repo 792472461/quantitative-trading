@@ -15,6 +15,8 @@ from qt_trader.guardian import RuntimeLock, RuntimeLockError, RuntimeStateStore
 from qt_trader.market import TradingCalendar
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.portfolio import Portfolio
+from qt_trader.readiness import run_preflight_checks
+from qt_trader.research import optimize_moving_average_parameters
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
 from qt_trader.scheduler import SessionScheduler
@@ -67,6 +69,9 @@ def render_backtest_metrics(metrics) -> None:
     summary.add_row("Average Loss", f"{metrics.average_loss:.2f}")
     summary.add_row("Trade Count", str(metrics.trade_count))
     summary.add_row("Equity Volatility", f"{metrics.equity_volatility_pct:.4f}%")
+    summary.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
+    summary.add_row("Calmar Ratio", f"{metrics.calmar_ratio:.2f}")
+    summary.add_row("Expectancy", f"{metrics.expectancy:.2f}")
     console.print(summary)
 
 
@@ -84,23 +89,49 @@ def build_runtime_dependencies(app_config):
     return storage, logger, alert_notifier, state_store
 
 
+def build_risk_manager(app_config):
+    return RiskManager(
+        max_position_pct=app_config.backtest.max_position_pct,
+        max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+        max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
+        max_positions=app_config.backtest.max_positions,
+        max_symbol_quantity=app_config.backtest.max_symbol_quantity,
+    )
+
+
+def persist_backtest_run(storage: SQLiteStorage, app_config, metrics, final_equity: float) -> None:
+    symbols = app_config.data.symbols or [app_config.data.symbol]
+    storage.save_backtest_run(
+        created_at=datetime.now().isoformat(),
+        strategy_name=app_config.strategy.name,
+        symbols=symbols,
+        fast_window=app_config.strategy.fast_window,
+        slow_window=app_config.strategy.slow_window,
+        trade_size=app_config.strategy.trade_size,
+        metrics=metrics,
+        final_equity=final_equity,
+    )
+
+
+def parse_int_list(raw: str) -> list[int]:
+    values = [int(part.strip()) for part in raw.split(",") if part.strip()]
+    if not values:
+        raise ValueError("at least one integer value is required")
+    return values
+
+
 @app.command()
 def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
     bars = create_data_feed(app_config).load()
     portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
 
     engine = BacktestEngine(
         strategy=build_strategy(app_config),
         broker=create_broker(app_config, portfolio=portfolio),
         portfolio=portfolio,
-        risk_manager=RiskManager(
-            max_position_pct=app_config.backtest.max_position_pct,
-            max_drawdown_pct=app_config.backtest.max_drawdown_pct,
-            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
-            max_positions=app_config.backtest.max_positions,
-            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
-        ),
+        risk_manager=build_risk_manager(app_config),
     )
     result = engine.run(bars)
     final_snapshot = result.final_snapshot
@@ -109,7 +140,10 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
         raise typer.Exit(code=1)
 
     render_summary("Backtest Summary", final_snapshot, len(result.executed_orders), len(result.rejected_orders))
-    render_backtest_metrics(analyze_backtest(result, app_config.backtest.initial_cash))
+    metrics = analyze_backtest(result, app_config.backtest.initial_cash)
+    render_backtest_metrics(metrics)
+    persist_backtest_run(storage, app_config, metrics, final_snapshot.total_value)
+    console.print(f"Backtest run stored in {app_config.storage.sqlite_path}")
 
 
 @app.command()
@@ -393,6 +427,7 @@ def dashboard(
     overview.add_row("Orders", str(summary.orders))
     overview.add_row("Fills", str(summary.fills))
     overview.add_row("Events", str(summary.events))
+    overview.add_row("Backtest Runs", str(summary.backtest_runs))
     overview.add_row("Synced Accounts", str(summary.synced_accounts))
     overview.add_row("Synced Positions", str(summary.synced_positions))
     overview.add_row("Synced Broker Orders", str(summary.synced_broker_orders))
@@ -466,6 +501,46 @@ def dashboard(
         broker_position_change_table.add_row("-", "-", "-", "-")
     console.print(broker_position_change_table)
 
+    latest_backtests = storage.latest_backtest_runs(limit=5)
+    latest_backtest_table = Table(title="Latest Backtest Runs")
+    latest_backtest_table.add_column("Created At")
+    latest_backtest_table.add_column("MA")
+    latest_backtest_table.add_column("Return", justify="right")
+    latest_backtest_table.add_column("Sharpe", justify="right")
+    latest_backtest_table.add_column("Drawdown", justify="right")
+    if latest_backtests:
+        for run in latest_backtests:
+            latest_backtest_table.add_row(
+                run.created_at,
+                f"{run.fast_window}/{run.slow_window}",
+                f"{run.total_return_pct:.2f}%",
+                f"{run.sharpe_ratio:.2f}",
+                f"{run.max_drawdown_pct:.2f}%",
+            )
+    else:
+        latest_backtest_table.add_row("-", "-", "-", "-", "-")
+    console.print(latest_backtest_table)
+
+    best_backtests = storage.best_backtest_runs(limit=5)
+    best_backtest_table = Table(title="Top Backtest Runs")
+    best_backtest_table.add_column("MA")
+    best_backtest_table.add_column("Trade Size", justify="right")
+    best_backtest_table.add_column("Return", justify="right")
+    best_backtest_table.add_column("Sharpe", justify="right")
+    best_backtest_table.add_column("Calmar", justify="right")
+    if best_backtests:
+        for run in best_backtests:
+            best_backtest_table.add_row(
+                f"{run.fast_window}/{run.slow_window}",
+                str(run.trade_size),
+                f"{run.total_return_pct:.2f}%",
+                f"{run.sharpe_ratio:.2f}",
+                f"{run.calmar_ratio:.2f}",
+            )
+    else:
+        best_backtest_table.add_row("-", "-", "-", "-", "-")
+    console.print(best_backtest_table)
+
     symbol_rows = storage.symbol_fill_summary()
     symbol_table = Table(title="Fill Summary By Symbol")
     symbol_table.add_column("Symbol")
@@ -504,6 +579,92 @@ def send_test_alert(config: Path = typer.Option(..., exists=True, readable=True,
     notifier = AlertNotifier(app_config.alert)
     notifier.send(AlertMessage(severity="INFO", title="Test alert", body="Manual alert pipeline check"))
     console.print("Test alert sent.")
+
+
+@app.command()
+def optimize_strategy(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    fast_windows: str = typer.Option("3,5,8", help="Comma separated fast MA windows."),
+    slow_windows: str = typer.Option("15,20,30", help="Comma separated slow MA windows."),
+    top_n: int = typer.Option(5, min=1, max=20, help="Number of top runs to display."),
+    trade_size: int | None = typer.Option(None, min=1, help="Optional trade size override."),
+) -> None:
+    app_config = load_config(config)
+    bars = create_data_feed(app_config).load()
+    try:
+        fast_values = parse_int_list(fast_windows)
+        slow_values = parse_int_list(slow_windows)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    results = optimize_moving_average_parameters(
+        bars=bars,
+        config=app_config,
+        fast_windows=fast_values,
+        slow_windows=slow_values,
+        trade_size=trade_size,
+    )
+    if not results:
+        console.print("[red]No valid parameter combinations found.[/red]")
+        raise typer.Exit(code=1)
+
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    resolved_trade_size = trade_size or app_config.strategy.trade_size
+    symbols = app_config.data.symbols or [app_config.data.symbol]
+    for result in results:
+        storage.save_backtest_run(
+            created_at=datetime.now().isoformat(),
+            strategy_name=app_config.strategy.name,
+            symbols=symbols,
+            fast_window=result.fast_window,
+            slow_window=result.slow_window,
+            trade_size=resolved_trade_size,
+            metrics=result.metrics,
+            final_equity=app_config.backtest.initial_cash * (1 + result.metrics.total_return_pct / 100),
+        )
+
+    table = Table(title="Moving Average Parameter Sweep")
+    table.add_column("Rank", justify="right")
+    table.add_column("MA")
+    table.add_column("Trade Size", justify="right")
+    table.add_column("Return", justify="right")
+    table.add_column("Sharpe", justify="right")
+    table.add_column("Drawdown", justify="right")
+    table.add_column("Trades", justify="right")
+    table.add_column("Expectancy", justify="right")
+    for index, result in enumerate(results[:top_n], start=1):
+        table.add_row(
+            str(index),
+            f"{result.fast_window}/{result.slow_window}",
+            str(result.trade_size),
+            f"{result.metrics.total_return_pct:.2f}%",
+            f"{result.metrics.sharpe_ratio:.2f}",
+            f"{result.metrics.max_drawdown_pct:.2f}%",
+            str(result.metrics.trade_count),
+            f"{result.metrics.expectancy:.2f}",
+        )
+    console.print(table)
+    console.print(f"Stored {len(results)} sweep runs in {app_config.storage.sqlite_path}")
+
+
+@app.command()
+def preflight_check(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    checks = run_preflight_checks(app_config)
+
+    table = Table(title="Preflight Checks")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_column("Message")
+    for check in checks:
+        status_color = {"PASS": "green", "WARN": "yellow", "FAIL": "red"}.get(check.status, "white")
+        table.add_row(check.name, f"[{status_color}]{check.status}[/{status_color}]", check.message)
+    console.print(table)
+
+    failures = [check for check in checks if check.status == "FAIL"]
+    if failures:
+        raise typer.Exit(code=1)
 
 
 @app.command("version")
