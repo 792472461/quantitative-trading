@@ -22,6 +22,7 @@
 - 国金 QMT / Ptrade 本地终端骨架
 - terminal client 抽象
 - QMT SDK client scaffold
+- xtquant 查询 adapter 骨架
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -209,14 +210,14 @@
 
 本轮目标：
 
-- 增加 QMT SDK client scaffold
-- 让 preflight 支持 qmt_sdk 模式
-- 为真实 xtquant 查询 adapter 预留注入点
+- 增加 xtquant 查询 adapter 骨架
+- 支持 userdata path 配置与查询对象映射
+- 继续保持 mock 与 qmt_sdk 两条路线并行可测
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities
 
-- 国金 QMT xtquant 查询 adapter
+- 国金 QMT 真实环境联调
 - broker 同步调度与告警
 - 任务守护与自动恢复完善
 - dashboard Web 化

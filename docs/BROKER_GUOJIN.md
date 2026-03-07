@@ -41,7 +41,8 @@
 
 - `mock` 模式可通过本地状态文件联调完整查询链路
 - `qmt_sdk` 模式已具备 SDK client scaffold 和 preflight 检查
-- 真实 `xtquant` 查询 adapter 还需要下一步实现
+- 已增加基于 `XtQuantTrader` 查询接口的 adapter 主骨架
+- 仍需要在真实国金 QMT 环境中核对字段映射和返回对象细节
 
 ## What Is Not Yet Confirmed
 
@@ -75,7 +76,7 @@
 
 使用 `config/guojin_qmt.yaml` 或 `config/guojin_ptrade.yaml` 前，需要先把 `broker.terminal_path` 改成你机器上的真实安装目录。
 
-如果你已经拿到了 QMT SDK 环境，可以改用 `config/guojin_qmt_sdk.yaml` 做环境检查；当前它会校验 SDK 模块是否可导入，但还不会直接完成真实查询。
+如果你已经拿到了 QMT SDK 环境，可以改用 `config/guojin_qmt_sdk.yaml` 做环境检查；当前代码已经接上 `XtQuantTrader` 查询主链路，但仍建议先在只读查询场景下验证账户、持仓、委托字段是否和国金实际环境一致。
 
 ```bash
 $env:BROKER_ACCOUNT_ID='guojin-qmt-demo-001'

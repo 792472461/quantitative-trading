@@ -63,6 +63,7 @@ class BrokerConfig(BaseModel):
     account_id_env: str = "BROKER_ACCOUNT_ID"
     base_url: str | None = None
     terminal_path: Path | None = None
+    terminal_userdata_path: Path | None = None
     executable_name: str | None = None
     terminal_type: str | None = None
     terminal_client_mode: str = "mock"

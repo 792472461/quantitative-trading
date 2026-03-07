@@ -2,6 +2,8 @@ from datetime import datetime
 from pathlib import Path
 import json
 import os
+import sys
+import types
 
 import pandas as pd
 
@@ -10,7 +12,7 @@ from qt_trader.analytics import analyze_backtest
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
-from qt_trader.broker.qmt_sdk import QMTSdkClient
+from qt_trader.broker.qmt_sdk import QMTSdkBundle, QMTSdkClient
 from qt_trader.broker.terminal_client import MockTerminalClient
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
@@ -644,68 +646,129 @@ def test_guojin_qmt_broker_accepts_injected_terminal_client(tmp_path: Path) -> N
     assert len(orders) == 1
 
 
-def test_qmt_sdk_client_accepts_injected_adapter() -> None:
-    class FakeQMTAdapter:
-        def get_account_info(self) -> AccountInfo:
-            return AccountInfo(
-                account_id="guojin-qmt-sdk-001",
-                broker="guojin_qmt",
-                cash=123456.0,
-                total_equity=130000.0,
-                buying_power=120000.0,
-                environment="qmt_sdk_readonly",
-            )
+def test_qmt_sdk_client_uses_sdk_bundle_and_maps_query_objects(tmp_path: Path) -> None:
+    class FakeAsset:
+        enable_balance = 123456.0
+        total_asset = 130000.0
 
-        def get_positions(self) -> list[PositionInfo]:
-            return [
-                PositionInfo(
-                    symbol="600519.SH",
-                    quantity=10,
-                    average_cost=1500.0,
-                    market_price=1520.0,
-                    market_value=15200.0,
-                )
-            ]
+    class FakePosition:
+        stock_code = "600519.SH"
+        volume = 10
+        open_price = 1500.0
+        last_price = 1520.0
+        market_value = 15200.0
 
-        def get_orders(self) -> list[OrderInfo]:
-            return [
-                OrderInfo(
-                    symbol="600519.SH",
-                    side="BUY",
-                    quantity=10,
-                    price=1500.0,
-                    status="FILLED",
-                    timestamp=datetime.fromisoformat("2026-03-07T09:35:00"),
-                    reason="sdk_adapter_test",
-                )
-            ]
+    class FakeOrder:
+        stock_code = "600519.SH"
+        order_volume = 10
+        order_type = 23
+        price = 1500.0
+        order_status = "filled"
+        order_time = "20260307093500"
+        order_remark = "sdk_adapter_test"
 
+    class FakeStockAccount:
+        def __init__(self, account_id: str) -> None:
+            self.account_id = account_id
+
+    class FakeXtQuantTrader:
+        def __init__(self, userdata_path: str, session_id: int) -> None:
+            self.userdata_path = userdata_path
+            self.session_id = session_id
+            self.started = False
+
+        def start(self) -> None:
+            self.started = True
+
+        def connect(self) -> int:
+            return 0
+
+        def subscribe(self, account) -> int:
+            return 0 if account.account_id == "guojin-qmt-sdk-001" else -1
+
+        def query_stock_asset(self, account):
+            return FakeAsset()
+
+        def query_stock_positions(self, account):
+            return [FakePosition()]
+
+        def query_stock_orders(self, account):
+            return [FakeOrder()]
+
+    userdata_dir = tmp_path / "userdata_mini"
+    userdata_dir.mkdir()
     client = QMTSdkClient(
         broker_name="guojin_qmt",
         account_id="guojin-qmt-sdk-001",
-        terminal_path="C:/Broker/Guojin/QMT",
-        sdk_module="json",
-        adapter=FakeQMTAdapter(),
+        terminal_path=str(tmp_path),
+        terminal_userdata_path=str(userdata_dir),
+        sdk_bundle=QMTSdkBundle(
+            XtQuantTrader=FakeXtQuantTrader,
+            StockAccount=FakeStockAccount,
+        ),
     )
 
-    assert client.get_account_info().account_id == "guojin-qmt-sdk-001"
-    assert len(client.get_positions()) == 1
-    assert len(client.get_orders()) == 1
+    account = client.get_account_info()
+    positions = client.get_positions()
+    orders = client.get_orders()
+
+    assert account.account_id == "guojin-qmt-sdk-001"
+    assert account.cash == 123456.0
+    assert len(positions) == 1
+    assert positions[0].symbol == "600519.SH"
+    assert len(orders) == 1
+    assert orders[0].side == "BUY"
+    assert orders[0].status == "FILLED"
 
 
 def test_guojin_qmt_sdk_factory_fails_cleanly_without_real_adapter(tmp_path: Path) -> None:
     config = load_config(Path("config/guojin_qmt_sdk.yaml"))
     config.broker.terminal_path = tmp_path
+    config.broker.terminal_userdata_path = tmp_path / "userdata_mini"
+    config.broker.terminal_userdata_path.mkdir()
     (tmp_path / "XtMiniQmt.exe").write_text("", encoding="utf-8")
-    config.broker.sdk_module = "json"
+    fake_package = types.ModuleType("fake_xtquant")
+    fake_xttrader = types.ModuleType("fake_xtquant.xttrader")
+    fake_xttype = types.ModuleType("fake_xtquant.xttype")
+
+    class FakeXtQuantTrader:
+        def __init__(self, userdata_path: str, session_id: int) -> None:
+            self.userdata_path = userdata_path
+            self.session_id = session_id
+
+        def start(self) -> None:
+            return None
+
+        def connect(self) -> int:
+            return 0
+
+        def subscribe(self, account) -> int:
+            return 0
+
+    class FakeStockAccount:
+        def __init__(self, account_id: str) -> None:
+            self.account_id = account_id
+
+    fake_xttrader.XtQuantTrader = FakeXtQuantTrader
+    fake_xttype.StockAccount = FakeStockAccount
+    sys.modules["fake_xtquant"] = fake_package
+    sys.modules["fake_xtquant.xttrader"] = fake_xttrader
+    sys.modules["fake_xtquant.xttype"] = fake_xttype
+    config.broker.sdk_module = "fake_xtquant"
     os.environ[config.broker.account_id_env] = "guojin-qmt-sdk-001"
 
     try:
-        create_broker(config)
-    except BrokerConfigurationError as exc:
-        assert "query adapter is not wired yet" in str(exc)
-    else:
-        raise AssertionError("qmt sdk scaffold should require a concrete adapter")
+        broker = create_broker(config)
+        try:
+            broker.get_account_info()
+        except AttributeError:
+            pass
+        else:
+            raise AssertionError("qmt sdk query path should require concrete trader query methods")
+    finally:
+        sys.modules.pop("fake_xtquant.xttrader", None)
+        sys.modules.pop("fake_xtquant.xttype", None)
+        sys.modules.pop("fake_xtquant", None)
 
 
 def test_backtest_analytics_computes_trade_metrics() -> None:
@@ -847,6 +910,8 @@ def test_preflight_checks_validate_terminal_broker_paths(tmp_path: Path) -> None
 def test_preflight_checks_validate_qmt_sdk_mode(tmp_path: Path) -> None:
     terminal_dir = tmp_path / "qmt"
     terminal_dir.mkdir()
+    userdata_dir = terminal_dir / "userdata_mini"
+    userdata_dir.mkdir()
     (terminal_dir / "XtMiniQmt.exe").write_text("", encoding="utf-8")
 
     config = load_config(Path("config/guojin_qmt_sdk.yaml"))
@@ -855,6 +920,7 @@ def test_preflight_checks_validate_qmt_sdk_mode(tmp_path: Path) -> None:
     config.runtime.lock_path = tmp_path / "runtime/runtime.lock"
     config.runtime.state_path = tmp_path / "runtime/state.json"
     config.broker.terminal_path = terminal_dir
+    config.broker.terminal_userdata_path = userdata_dir
     config.broker.sdk_module = "json"
     os.environ[config.broker.account_id_env] = "guojin-qmt-sdk-001"
 

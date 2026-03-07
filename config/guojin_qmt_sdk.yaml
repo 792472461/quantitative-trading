@@ -29,6 +29,7 @@ broker:
   sdk_module: xtquant
   qmt_session_id: 1
   terminal_path: C:/Broker/Guojin/QMT
+  terminal_userdata_path: C:/Broker/Guojin/QMT/userdata_mini
   executable_name: XtMiniQmt.exe
 storage:
   sqlite_path: trading.db

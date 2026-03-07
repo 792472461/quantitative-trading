@@ -123,6 +123,9 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
                     broker_name="guojin_qmt",
                     account_id=os.getenv(config.broker.account_id_env, "guojin-qmt-account"),
                     terminal_path=str(config.broker.terminal_path),
+                    terminal_userdata_path=(
+                        None if config.broker.terminal_userdata_path is None else str(config.broker.terminal_userdata_path)
+                    ),
                     environment="qmt_sdk_readonly",
                     sdk_module=config.broker.sdk_module or "xtquant",
                     session_id=config.broker.qmt_session_id,

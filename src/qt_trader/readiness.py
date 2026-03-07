@@ -104,6 +104,13 @@ def _check_broker_configuration(config: AppConfig) -> PreflightCheck:
                 return PreflightCheck("broker", "WARN", f"terminal executable not found: {executable_path}")
         client_mode = config.broker.terminal_client_mode.lower()
         if provider == "guojin_qmt" and client_mode == "qmt_sdk":
+            userdata_path = (
+                Path(config.broker.terminal_userdata_path)
+                if config.broker.terminal_userdata_path is not None
+                else terminal_path / "userdata_mini"
+            )
+            if not userdata_path.exists():
+                return PreflightCheck("broker", "WARN", f"qmt userdata path not found yet: {userdata_path}")
             sdk_module = config.broker.sdk_module or "xtquant"
             try:
                 importlib.import_module(sdk_module)
