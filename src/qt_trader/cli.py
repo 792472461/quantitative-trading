@@ -4,12 +4,31 @@ from datetime import datetime
 from pathlib import Path
 import time
 
-from rich.console import Console
 from rich.table import Table
 import typer
 
+from qt_trader import __version__
+from qt_trader.alerts import AlertMessage, AlertNotifier
+from qt_trader.analytics import analyze_backtest, analyze_market_regimes
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
+from qt_trader.cli_helpers import (
+    build_risk_manager,
+    build_runtime_dependencies,
+    build_strategy,
+    parse_int_list,
+    persist_backtest_run,
+)
+from qt_trader.cli_render import (
+    console,
+    format_delta,
+    render_backtest_metrics,
+    render_market_regime_metrics,
+    render_post_close_summary,
+    render_pre_market_review,
+    render_signal_watch_result,
+    render_summary,
+)
 from qt_trader.config import load_config
 from qt_trader.data.factory import create_data_feed
 from qt_trader.guardian import (
@@ -20,243 +39,14 @@ from qt_trader.guardian import (
     SignalWatchStateStore,
 )
 from qt_trader.market import TradingCalendar
-from qt_trader.logging_utils import JsonLogger
 from qt_trader.portfolio import Portfolio
 from qt_trader.readiness import run_preflight_checks
 from qt_trader.research import optimize_moving_average_parameters
-from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime, SignalWatchingRuntime
 from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
-from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
-from qt_trader.alerts import AlertMessage, AlertNotifier
-from qt_trader.analytics import analyze_backtest, analyze_market_regimes
-from qt_trader import __version__
 
 app = typer.Typer(help="Production-oriented quantitative trading CLI.")
-console = Console()
-
-
-def build_strategy(config):
-    if config.strategy.name != "moving_average_cross":
-        raise ValueError(f"Unsupported strategy: {config.strategy.name}")
-
-    symbols = config.data.symbols or [config.data.symbol]
-    benchmark_symbol = config.strategy.benchmark_symbol
-    trade_symbols = [symbol for symbol in symbols if symbol != benchmark_symbol]
-    return MovingAverageCrossStrategy(
-        symbols=trade_symbols,
-        fast_window=config.strategy.fast_window,
-        slow_window=config.strategy.slow_window,
-        trade_size=config.strategy.trade_size,
-        market_filter_enabled=config.strategy.market_filter_enabled,
-        benchmark_symbol=benchmark_symbol,
-        market_fast_window=config.strategy.market_fast_window,
-        market_slow_window=config.strategy.market_slow_window,
-    )
-
-
-def render_summary(title: str, final_snapshot, executed_orders: int, rejected_orders: int) -> None:
-    summary = Table(title=title)
-    summary.add_column("Metric")
-    summary.add_column("Value", justify="right")
-    summary.add_row("Final Equity", f"{final_snapshot.total_value:.2f}")
-    summary.add_row("Cash", f"{final_snapshot.cash:.2f}")
-    summary.add_row("Positions Value", f"{final_snapshot.positions_value:.2f}")
-    summary.add_row("Drawdown", f"{final_snapshot.drawdown:.2%}")
-    summary.add_row("Filled Orders", str(executed_orders))
-    summary.add_row("Rejected Orders", str(rejected_orders))
-    console.print(summary)
-
-
-def render_backtest_metrics(metrics) -> None:
-    summary = Table(title="Performance Metrics")
-    summary.add_column("Metric")
-    summary.add_column("Value", justify="right")
-    summary.add_row("Total Return", f"{metrics.total_return_pct:.2f}%")
-    summary.add_row("Annualized Return", f"{metrics.annualized_return_pct:.2f}%")
-    summary.add_row("Max Drawdown", f"{metrics.max_drawdown_pct:.2f}%")
-    summary.add_row("Win Rate", f"{metrics.win_rate_pct:.2f}%")
-    summary.add_row("Profit Factor", f"{metrics.profit_factor:.2f}")
-    summary.add_row("Average Win", f"{metrics.average_win:.2f}")
-    summary.add_row("Average Loss", f"{metrics.average_loss:.2f}")
-    summary.add_row("Trade Count", str(metrics.trade_count))
-    summary.add_row("Equity Volatility", f"{metrics.equity_volatility_pct:.4f}%")
-    summary.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
-    summary.add_row("Calmar Ratio", f"{metrics.calmar_ratio:.2f}")
-    summary.add_row("Expectancy", f"{metrics.expectancy:.2f}")
-    console.print(summary)
-
-
-def render_market_regime_metrics(regime_metrics) -> None:
-    if not regime_metrics:
-        return
-    table = Table(title="Market Regime Breakdown")
-    table.add_column("Regime")
-    table.add_column("Periods", justify="right")
-    table.add_column("Total Return", justify="right")
-    table.add_column("Avg Period Return", justify="right")
-    table.add_column("Fills", justify="right")
-    for item in regime_metrics:
-        table.add_row(
-            item.regime,
-            str(item.periods),
-            f"{item.total_return_pct:.2f}%",
-            f"{item.average_period_return_pct:.4f}%",
-            str(item.fill_count),
-        )
-    console.print(table)
-
-
-def render_signal_watch_result(result) -> None:
-    summary = Table(title="Signal Watch Summary")
-    summary.add_column("Metric")
-    summary.add_column("Value", justify="right")
-    summary.add_row("Scanned Bars", str(result.scanned_bars))
-    summary.add_row("Latest Bar", "-" if result.latest_timestamp is None else result.latest_timestamp.isoformat())
-    summary.add_row("New Alerts", str(len(result.alerted_signals)))
-    console.print(summary)
-
-    signal_table = Table(title="New Trade Signals")
-    signal_table.add_column("Timestamp")
-    signal_table.add_column("Symbol")
-    signal_table.add_column("Side")
-    signal_table.add_column("Quantity", justify="right")
-    signal_table.add_column("Price", justify="right")
-    signal_table.add_column("Reason")
-    if result.alerted_signals:
-        for item in result.alerted_signals:
-            signal_table.add_row(
-                item.timestamp.isoformat(),
-                item.signal.symbol,
-                item.signal.side.value,
-                str(item.signal.quantity),
-                f"{item.price:.2f}",
-                item.signal.reason,
-            )
-    else:
-        signal_table.add_row("-", "-", "-", "0", "-", "-")
-    console.print(signal_table)
-
-
-def render_pre_market_review(trading_date: str, previous_trading_date: str, yesterday_buys, signal_result, top_sweeps) -> None:
-    overview = Table(title="Pre-Market Review")
-    overview.add_column("Metric")
-    overview.add_column("Value", justify="right")
-    overview.add_row("Trading Date", trading_date)
-    overview.add_row("Previous Trading Day", previous_trading_date)
-    overview.add_row("Yesterday Buys", str(len(yesterday_buys)))
-    overview.add_row("Today Open Signals", str(len(signal_result.alerted_signals)))
-    overview.add_row("News Fetch", "pending integration")
-    console.print(overview)
-
-    buy_table = Table(title="Yesterday Buy Fills")
-    buy_table.add_column("Symbol")
-    buy_table.add_column("Quantity", justify="right")
-    buy_table.add_column("Price", justify="right")
-    buy_table.add_column("Timestamp")
-    if yesterday_buys:
-        for row in yesterday_buys:
-            buy_table.add_row(str(row["symbol"]), str(row["quantity"]), f"{float(row['price']):.2f}", str(row["timestamp"]))
-    else:
-        buy_table.add_row("-", "0", "-", "-")
-    console.print(buy_table)
-
-    signal_table = Table(title="Open Candidate Signals")
-    signal_table.add_column("Symbol")
-    signal_table.add_column("Side")
-    signal_table.add_column("Qty", justify="right")
-    signal_table.add_column("Price", justify="right")
-    signal_table.add_column("Reason")
-    if signal_result.alerted_signals:
-        for item in signal_result.alerted_signals:
-            signal_table.add_row(
-                item.signal.symbol,
-                item.signal.side.value,
-                str(item.signal.quantity),
-                f"{item.price:.2f}",
-                item.signal.reason,
-            )
-    else:
-        signal_table.add_row("-", "-", "0", "-", "-")
-    console.print(signal_table)
-
-    sweep_table = Table(title="Best Pre-Market Strategy Candidates")
-    sweep_table.add_column("Rank", justify="right")
-    sweep_table.add_column("MA")
-    sweep_table.add_column("Return", justify="right")
-    sweep_table.add_column("Sharpe", justify="right")
-    sweep_table.add_column("Drawdown", justify="right")
-    if top_sweeps:
-        for index, item in enumerate(top_sweeps, start=1):
-            sweep_table.add_row(
-                str(index),
-                f"{item.fast_window}/{item.slow_window}",
-                f"{item.metrics.total_return_pct:.2f}%",
-                f"{item.metrics.sharpe_ratio:.2f}",
-                f"{item.metrics.max_drawdown_pct:.2f}%",
-            )
-    else:
-        sweep_table.add_row("-", "-", "-", "-", "-")
-    console.print(sweep_table)
-
-
-def render_post_close_summary(trading_date: str, metrics, final_snapshot, executed_orders: int, rejected_orders: int) -> None:
-    table = Table(title="Post-Close Performance")
-    table.add_column("Metric")
-    table.add_column("Value", justify="right")
-    table.add_row("Trading Date", trading_date)
-    table.add_row("Final Equity", f"{final_snapshot.total_value:.2f}")
-    table.add_row("Total Return", f"{metrics.total_return_pct:.2f}%")
-    table.add_row("Max Drawdown", f"{metrics.max_drawdown_pct:.2f}%")
-    table.add_row("Filled Orders", str(executed_orders))
-    table.add_row("Rejected Orders", str(rejected_orders))
-    console.print(table)
-
-
-def format_delta(value: float | int | None, precision: int = 2) -> str:
-    if value is None:
-        return "-"
-    return f"{value:+.{precision}f}"
-
-
-def build_runtime_dependencies(app_config):
-    storage = SQLiteStorage(app_config.storage.sqlite_path)
-    logger = JsonLogger(app_config.logging.jsonl_path)
-    alert_notifier = AlertNotifier(app_config.alert)
-    state_store = RuntimeStateStore(app_config.runtime.state_path)
-    return storage, logger, alert_notifier, state_store
-
-
-def build_risk_manager(app_config):
-    return RiskManager(
-        max_position_pct=app_config.backtest.max_position_pct,
-        max_drawdown_pct=app_config.backtest.max_drawdown_pct,
-        max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
-        max_positions=app_config.backtest.max_positions,
-        max_symbol_quantity=app_config.backtest.max_symbol_quantity,
-    )
-
-
-def persist_backtest_run(storage: SQLiteStorage, app_config, metrics, final_equity: float) -> None:
-    symbols = app_config.data.symbols or [app_config.data.symbol]
-    storage.save_backtest_run(
-        created_at=datetime.now().isoformat(),
-        strategy_name=app_config.strategy.name,
-        symbols=symbols,
-        fast_window=app_config.strategy.fast_window,
-        slow_window=app_config.strategy.slow_window,
-        trade_size=app_config.strategy.trade_size,
-        metrics=metrics,
-        final_equity=final_equity,
-    )
-
-
-def parse_int_list(raw: str) -> list[int]:
-    values = [int(part.strip()) for part in raw.split(",") if part.strip()]
-    if not values:
-        raise ValueError("at least one integer value is required")
-    return values
 
 
 @app.command()
