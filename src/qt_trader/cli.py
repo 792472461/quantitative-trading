@@ -21,6 +21,7 @@ from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
 from qt_trader.alerts import AlertMessage, AlertNotifier
+from qt_trader.analytics import analyze_backtest
 from qt_trader import __version__
 
 app = typer.Typer(help="Production-oriented quantitative trading CLI.")
@@ -50,6 +51,22 @@ def render_summary(title: str, final_snapshot, executed_orders: int, rejected_or
     summary.add_row("Drawdown", f"{final_snapshot.drawdown:.2%}")
     summary.add_row("Filled Orders", str(executed_orders))
     summary.add_row("Rejected Orders", str(rejected_orders))
+    console.print(summary)
+
+
+def render_backtest_metrics(metrics) -> None:
+    summary = Table(title="Performance Metrics")
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Total Return", f"{metrics.total_return_pct:.2f}%")
+    summary.add_row("Annualized Return", f"{metrics.annualized_return_pct:.2f}%")
+    summary.add_row("Max Drawdown", f"{metrics.max_drawdown_pct:.2f}%")
+    summary.add_row("Win Rate", f"{metrics.win_rate_pct:.2f}%")
+    summary.add_row("Profit Factor", f"{metrics.profit_factor:.2f}")
+    summary.add_row("Average Win", f"{metrics.average_win:.2f}")
+    summary.add_row("Average Loss", f"{metrics.average_loss:.2f}")
+    summary.add_row("Trade Count", str(metrics.trade_count))
+    summary.add_row("Equity Volatility", f"{metrics.equity_volatility_pct:.4f}%")
     console.print(summary)
 
 
@@ -86,6 +103,7 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
         raise typer.Exit(code=1)
 
     render_summary("Backtest Summary", final_snapshot, len(result.executed_orders), len(result.rejected_orders))
+    render_backtest_metrics(analyze_backtest(result, app_config.backtest.initial_cash))
 
 
 @app.command()

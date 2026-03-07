@@ -26,6 +26,7 @@
 - SQLite 持久化
 - 结构化日志与告警
 - 更真实的交易成本模型
+- 回测绩效分析
 
 ## Architecture
 
@@ -63,6 +64,7 @@
 - `python -m qt_trader.cli broker-sync --config config/readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/http_readonly_broker.yaml`
 - `python -m qt_trader.cli broker-account --config config/guojin_http_readonly.yaml`
+- 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
 
 ## Iteration Log
 
@@ -178,11 +180,19 @@
 - 支持 account / positions / orders 接口契约
 - 为真实券商 API 只读联调打基础
 
+### 2026-03-07 - `316eebb`
+
+`feat: add guojin readonly broker scaffold`
+
+- 增加国金证券只读适配器
+- 增加国金接入配置和准备文档
+- 明确国金为主接入目标
+
 ### 2026-03-07 - In Progress
 
 本轮目标：
 
-- 增加实盘券商适配骨架
+- 增加策略说明和回测绩效分析
 - 后续每次迭代完成后同步更新本文档
 
 ## Next Priorities

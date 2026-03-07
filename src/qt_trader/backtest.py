@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from qt_trader.broker.base import BrokerGateway
-from qt_trader.models import Bar, Order, OrderStatus, PortfolioSnapshot
+from qt_trader.models import Bar, Fill, Order, OrderStatus, PortfolioSnapshot
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.strategy.base import Strategy
@@ -14,6 +14,7 @@ class BacktestResult:
     snapshots: list[PortfolioSnapshot] = field(default_factory=list)
     rejected_orders: list[Order] = field(default_factory=list)
     executed_orders: list[Order] = field(default_factory=list)
+    fills: list[Fill] = field(default_factory=list)
 
     @property
     def final_snapshot(self) -> PortfolioSnapshot | None:
@@ -43,6 +44,7 @@ class BacktestEngine:
             snapshot = self.portfolio.snapshot(bar.timestamp, latest_prices)
 
             for signal in signals:
+                # Strategy only emits intent; order creation and risk checks happen here.
                 order = Order(
                     symbol=signal.symbol,
                     side=signal.side,
@@ -63,6 +65,7 @@ class BacktestEngine:
                 self.portfolio.apply_fill(fill)
                 order.status = OrderStatus.FILLED
                 result.executed_orders.append(order)
+                result.fills.append(fill)
 
             result.snapshots.append(self.portfolio.snapshot(bar.timestamp, latest_prices))
 

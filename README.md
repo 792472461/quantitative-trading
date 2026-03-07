@@ -18,6 +18,7 @@
 - 组合级风控
 - 任务守护与自动恢复基础
 - 券商账户/持仓/委托查询骨架
+- 回测绩效分析
 - 券商网关抽象层
 - 本地模拟撮合网关
 - SQLite 持久化
@@ -128,6 +129,7 @@ qt-trader version
 
 持续维护文档在 [docs/PROJECT.md](F:/workspace/python/quantitative-trading/docs/PROJECT.md)，里面会记录项目概览、架构和每次迭代内容。
 国金证券接入准备文档在 [docs/BROKER_GUOJIN.md](F:/workspace/python/quantitative-trading/docs/BROKER_GUOJIN.md)。
+当前默认策略说明文档在 [docs/STRATEGY_MOVING_AVERAGE.md](F:/workspace/python/quantitative-trading/docs/STRATEGY_MOVING_AVERAGE.md)。
 
 ## 真实数据
 

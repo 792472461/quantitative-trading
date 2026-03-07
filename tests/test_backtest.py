@@ -6,6 +6,7 @@ import os
 import pandas as pd
 
 from qt_trader.alerts import AlertNotifier
+from qt_trader.analytics import analyze_backtest
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
@@ -50,9 +51,12 @@ def test_backtest_runs_end_to_end() -> None:
     )
 
     result = engine.run(bars)
+    metrics = analyze_backtest(result, config.backtest.initial_cash)
 
     assert result.final_snapshot is not None
     assert result.final_snapshot.total_value > 0
+    assert metrics.trade_count >= 0
+    assert metrics.max_drawdown_pct >= 0
 
 
 def test_paper_trading_persists_state(tmp_path: Path) -> None:
@@ -475,3 +479,32 @@ def test_guojin_http_readonly_factory() -> None:
     broker = create_broker(config)
 
     assert isinstance(broker, GuojinHTTPReadOnlyBroker)
+
+
+def test_backtest_analytics_computes_trade_metrics() -> None:
+    config = load_config(Path("config/example.yaml"))
+    bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
+    engine = BacktestEngine(
+        strategy=MovingAverageCrossStrategy(
+            symbols=config.data.symbols or [config.data.symbol],
+            fast_window=config.strategy.fast_window,
+            slow_window=config.strategy.slow_window,
+            trade_size=config.strategy.trade_size,
+        ),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
+        risk_manager=RiskManager(
+            max_position_pct=config.backtest.max_position_pct,
+            max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
+        ),
+    )
+
+    result = engine.run(bars)
+    metrics = analyze_backtest(result, config.backtest.initial_cash)
+
+    assert metrics.trade_count == len(result.fills) // 2
+    assert metrics.total_return_pct != 0
