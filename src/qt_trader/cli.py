@@ -12,12 +12,14 @@ from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
 from qt_trader.data.factory import create_data_feed
 from qt_trader.market import TradingCalendar
+from qt_trader.logging_utils import JsonLogger
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
 from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
+from qt_trader.alerts import AlertMessage, AlertNotifier
 from qt_trader import __version__
 
 app = typer.Typer(help="Production-oriented quantitative trading CLI.")
@@ -49,6 +51,13 @@ def render_summary(title: str, final_snapshot, executed_orders: int, rejected_or
     console.print(summary)
 
 
+def build_runtime_dependencies(app_config):
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    logger = JsonLogger(app_config.logging.jsonl_path)
+    alert_notifier = AlertNotifier(app_config.alert)
+    return storage, logger, alert_notifier
+
+
 @app.command()
 def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
@@ -76,7 +85,7 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
 def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
     app_config = load_config(config)
     bars = create_data_feed(app_config).load()
-    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    storage, logger, alert_notifier = build_runtime_dependencies(app_config)
 
     try:
         broker = create_broker(app_config)
@@ -95,6 +104,10 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
         storage=storage,
         persist_snapshots=app_config.runtime.persist_snapshots,
         sleep_seconds=0.0,
+        logger=logger,
+        alert_notifier=alert_notifier,
+        max_drawdown_alert_pct=app_config.alert.max_drawdown_pct,
+        rejected_order_alert_threshold=app_config.alert.rejected_order_threshold,
     )
     result = runtime.run(bars)
     final_snapshot = result.snapshots[-1] if result.snapshots else None
@@ -106,8 +119,10 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
     counts = storage.counts()
     console.print(
         f"Persisted to {app_config.storage.sqlite_path}: "
-        f"{counts['orders']} orders, {counts['fills']} fills, {counts['snapshots']} snapshots"
+        f"{counts['orders']} orders, {counts['fills']} fills, "
+        f"{counts['snapshots']} snapshots, {counts['events']} events"
     )
+    console.print(f"Structured log written to {app_config.logging.jsonl_path}")
 
 
 @app.command()
@@ -153,7 +168,7 @@ def run_session(
         raise typer.Exit(code=1)
 
     bars = create_data_feed(app_config).load()
-    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    storage, logger, alert_notifier = build_runtime_dependencies(app_config)
     runtime = PaperTradingRuntime(
         strategy=build_strategy(app_config),
         broker=create_broker(app_config),
@@ -165,6 +180,10 @@ def run_session(
         storage=storage,
         persist_snapshots=app_config.runtime.persist_snapshots,
         sleep_seconds=0.0,
+        logger=logger,
+        alert_notifier=alert_notifier,
+        max_drawdown_alert_pct=app_config.alert.max_drawdown_pct,
+        rejected_order_alert_threshold=app_config.alert.rejected_order_threshold,
     )
     result = runtime.run(bars)
     final_snapshot = result.snapshots[-1] if result.snapshots else None
@@ -173,6 +192,14 @@ def run_session(
         raise typer.Exit(code=1)
 
     render_summary("Session Summary", final_snapshot, len(result.executed_orders), len(result.rejected_orders))
+
+
+@app.command()
+def send_test_alert(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    notifier = AlertNotifier(app_config.alert)
+    notifier.send(AlertMessage(severity="INFO", title="Test alert", body="Manual alert pipeline check"))
+    console.print("Test alert sent.")
 
 
 @app.command("version")

@@ -29,6 +29,14 @@ storage:
 runtime:
   polling_interval_seconds: 1.0
   persist_snapshots: true
+logging:
+  level: INFO
+  jsonl_path: logs/runtime.jsonl
+alert:
+  enabled: true
+  channels: [stdout, file]
+  max_drawdown_pct: 0.05
+  rejected_order_threshold: 1
 market:
   timezone: Asia/Shanghai
   weekdays: [0, 1, 2, 3, 4]

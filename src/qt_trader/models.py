@@ -71,3 +71,11 @@ class PortfolioSnapshot:
     positions_value: float
     drawdown: float
     positions: dict[str, Position] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class RuntimeEvent:
+    event_type: str
+    timestamp: datetime
+    severity: str
+    message: str

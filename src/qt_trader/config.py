@@ -54,6 +54,18 @@ class RuntimeConfig(BaseModel):
     persist_snapshots: bool = True
 
 
+class LoggingConfig(BaseModel):
+    level: str = "INFO"
+    jsonl_path: Path = Path("logs/runtime.jsonl")
+
+
+class AlertConfig(BaseModel):
+    enabled: bool = True
+    channels: list[str] = ["stdout"]
+    max_drawdown_pct: float = Field(default=0.1, ge=0, le=1)
+    rejected_order_threshold: int = Field(default=1, ge=1)
+
+
 class MarketConfig(BaseModel):
     timezone: str = "Asia/Shanghai"
     weekdays: list[int] = [0, 1, 2, 3, 4]
@@ -72,6 +84,8 @@ class AppConfig(BaseModel):
     broker: BrokerConfig = BrokerConfig()
     storage: StorageConfig = StorageConfig()
     runtime: RuntimeConfig = RuntimeConfig()
+    logging: LoggingConfig = LoggingConfig()
+    alert: AlertConfig = AlertConfig()
     market: MarketConfig = MarketConfig()
 
 

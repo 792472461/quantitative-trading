@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from qt_trader.models import Fill, Order, PortfolioSnapshot
+from qt_trader.models import Fill, Order, PortfolioSnapshot, RuntimeEvent
 
 
 class SQLiteStorage:
@@ -52,6 +52,17 @@ class SQLiteStorage:
                     total_value REAL NOT NULL,
                     positions_value REAL NOT NULL,
                     drawdown REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    message TEXT NOT NULL
                 )
                 """
             )
@@ -107,9 +118,25 @@ class SQLiteStorage:
                 ),
             )
 
+    def save_event(self, event: RuntimeEvent) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO events (event_type, timestamp, severity, message)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    event.event_type,
+                    event.timestamp.isoformat(),
+                    event.severity,
+                    event.message,
+                ),
+            )
+
     def counts(self) -> dict[str, int]:
         with self._connect() as conn:
             orders = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
             fills = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
             snapshots = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
-        return {"orders": orders, "fills": fills, "snapshots": snapshots}
+            events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        return {"orders": orders, "fills": fills, "snapshots": snapshots, "events": events}

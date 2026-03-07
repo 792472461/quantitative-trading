@@ -1,13 +1,16 @@
 from datetime import datetime
 from pathlib import Path
+import json
 
 import pandas as pd
 
+from qt_trader.alerts import AlertNotifier
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
 from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
+from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
@@ -45,8 +48,11 @@ def test_backtest_runs_end_to_end() -> None:
 def test_paper_trading_persists_state(tmp_path: Path) -> None:
     config = load_config(Path("config/example.yaml"))
     config.storage.sqlite_path = tmp_path / "runtime.db"
+    config.logging.jsonl_path = tmp_path / "runtime.jsonl"
     bars = create_data_feed(config).load()
     storage = SQLiteStorage(config.storage.sqlite_path)
+    logger = JsonLogger(config.logging.jsonl_path)
+    alert_notifier = AlertNotifier(config.alert, output_path=tmp_path / "alerts.log")
 
     runtime = PaperTradingRuntime(
         strategy=MovingAverageCrossStrategy(
@@ -64,6 +70,10 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
         storage=storage,
         persist_snapshots=True,
         sleep_seconds=0.0,
+        logger=logger,
+        alert_notifier=alert_notifier,
+        max_drawdown_alert_pct=config.alert.max_drawdown_pct,
+        rejected_order_alert_threshold=config.alert.rejected_order_threshold,
     )
 
     result = runtime.run(bars)
@@ -73,6 +83,10 @@ def test_paper_trading_persists_state(tmp_path: Path) -> None:
     assert counts["orders"] == len(result.executed_orders) + len(result.rejected_orders)
     assert counts["fills"] == len(result.executed_orders)
     assert counts["snapshots"] == len(result.snapshots)
+    assert counts["events"] >= len(result.executed_orders)
+    assert config.logging.jsonl_path.exists()
+    first_log = json.loads(config.logging.jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+    assert first_log["event_type"] == "runtime_started"
 
 
 def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
