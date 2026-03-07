@@ -1,0 +1,99 @@
+# Quantitative Trading Project Notes
+
+## Project Overview
+
+这是一个面向个人长期使用的 Python 量化交易项目，目标不是做演示，而是逐步演进成可研究、可回测、可模拟运行、可持续维护的软件。
+
+当前核心能力：
+
+- 策略接口与示例策略
+- CSV 和 AKShare 数据源
+- AKShare 失败时回退本地缓存 CSV
+- 回测引擎
+- Paper trading 运行时
+- 风控
+- 交易日历与交易时段控制
+- SQLite 持久化
+- 结构化日志与告警
+- 更真实的交易成本模型
+
+## Architecture
+
+- `src/qt_trader/data/`
+  负责行情数据接入与归一化
+- `src/qt_trader/strategy/`
+  负责策略生成信号
+- `src/qt_trader/backtest.py`
+  负责历史回测
+- `src/qt_trader/runtime.py`
+  负责 paper trading 运行时
+- `src/qt_trader/broker/`
+  负责券商网关与执行抽象
+- `src/qt_trader/costs.py`
+  负责佣金、最低佣金、印花税、滑点模型
+- `src/qt_trader/storage.py`
+  负责订单、成交、快照、事件持久化
+- `src/qt_trader/market.py` / `src/qt_trader/scheduler.py`
+  负责交易时间控制
+- `src/qt_trader/logging_utils.py` / `src/qt_trader/alerts.py`
+  负责运行日志与告警
+
+## Commands
+
+- `python -m qt_trader.cli backtest --config config/example.yaml`
+- `python -m qt_trader.cli paper-trade --config config/example.yaml`
+- `python -m qt_trader.cli fetch-data --config config/akshare.yaml`
+- `python -m qt_trader.cli market-status --config config/example.yaml`
+- `python -m qt_trader.cli run-session --config config/example.yaml --force`
+- `python -m qt_trader.cli send-test-alert --config config/example.yaml`
+
+## Iteration Log
+
+### 2026-03-07 - `5a076fb`
+
+`feat: bootstrap quantitative trading foundation`
+
+- 初始化 Python 项目结构
+- 实现回测主链路、风控、组合管理、paper broker
+- 增加 CLI、示例配置、示例数据和基础测试
+
+### 2026-03-07 - `8c11205`
+
+`feat: add akshare market data provider`
+
+- 增加 AKShare A 股历史行情接入
+- 新增数据源工厂与 `fetch-data` 命令
+- 支持抓取真实历史数据并导出标准化 CSV
+
+### 2026-03-07 - `e10c362`
+
+`feat: add market session calendar and scheduler`
+
+- 增加交易日历和交易时段判断
+- 增加 `market-status` 和 `run-session`
+- 支持按交易时间控制是否运行
+
+### 2026-03-07 - `ec4314f`
+
+`feat: add runtime logging and alerts`
+
+- 增加结构化 JSONL 日志
+- 增加运行事件落库
+- 增加 stdout / file 告警
+
+### 2026-03-07 - In Progress
+
+本轮目标：
+
+- 增加更真实的交易成本模型
+- 建立持续维护的项目文档
+- 增加 AKShare 到本地缓存的稳健回退
+- 后续每次迭代完成后同步更新本文档
+
+## Next Priorities
+
+- 多标的支持
+- 更精细的 A 股交易日历
+- 实盘券商适配
+- 监控看板
+- 任务守护与自动恢复

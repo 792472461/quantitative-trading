@@ -8,10 +8,12 @@ from qt_trader.alerts import AlertNotifier
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
+from qt_trader.costs import ExecutionCostModel
 from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
+from qt_trader.models import OrderSide
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
@@ -119,6 +121,31 @@ def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
     assert export_path.exists()
 
 
+def test_akshare_feed_falls_back_to_cached_csv(tmp_path: Path) -> None:
+    export_path = tmp_path / "cached.csv"
+    pd.DataFrame(
+        {
+            "datetime": ["2024-01-02", "2024-01-03"],
+            "open": [100.0, 101.0],
+            "high": [102.0, 103.0],
+            "low": [99.0, 100.5],
+            "close": [101.5, 102.5],
+            "volume": [10000, 12000],
+        }
+    ).to_csv(export_path, index=False)
+
+    feed = AKShareDataFeed(symbol="600519", output_csv_path=export_path)
+
+    def broken_fetch_frame() -> pd.DataFrame:
+        raise RuntimeError("network unavailable")
+
+    feed._fetch_frame = broken_fetch_frame  # type: ignore[method-assign]
+    bars = feed.load()
+
+    assert len(bars) == 2
+    assert bars[0].close == 101.5
+
+
 def test_trading_calendar_and_scheduler() -> None:
     config = load_config(Path("config/example.yaml"))
     calendar = TradingCalendar(config.market)
@@ -133,3 +160,20 @@ def test_trading_calendar_and_scheduler() -> None:
     assert calendar.status(weekend_time).is_trading_day is False
     assert scheduler.should_run_now(open_time) is True
     assert scheduler.should_run_now(weekend_time) is False
+
+
+def test_execution_cost_model_applies_slippage_and_taxes() -> None:
+    model = ExecutionCostModel(
+        commission_rate=0.0003,
+        min_commission=5.0,
+        stamp_duty_rate=0.001,
+        slippage_bps=5.0,
+    )
+
+    buy_price = model.execution_price(100.0, OrderSide.BUY)
+    sell_price = model.execution_price(100.0, OrderSide.SELL)
+
+    assert round(buy_price, 4) == 100.05
+    assert round(sell_price, 4) == 99.95
+    assert model.commission(buy_price, 10) == 5.0
+    assert round(model.stamp_duty(sell_price, 100, OrderSide.SELL), 3) == 9.995

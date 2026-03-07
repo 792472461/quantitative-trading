@@ -39,10 +39,13 @@ class SQLiteStorage:
                     quantity INTEGER NOT NULL,
                     price REAL NOT NULL,
                     timestamp TEXT NOT NULL,
-                    commission REAL NOT NULL
+                    commission REAL NOT NULL,
+                    stamp_duty REAL NOT NULL,
+                    slippage_cost REAL NOT NULL
                 )
                 """
             )
+            self._ensure_fill_columns(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS snapshots (
@@ -67,6 +70,13 @@ class SQLiteStorage:
                 """
             )
 
+    def _ensure_fill_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(fills)").fetchall()}
+        if "stamp_duty" not in columns:
+            conn.execute("ALTER TABLE fills ADD COLUMN stamp_duty REAL NOT NULL DEFAULT 0")
+        if "slippage_cost" not in columns:
+            conn.execute("ALTER TABLE fills ADD COLUMN slippage_cost REAL NOT NULL DEFAULT 0")
+
     def save_order(self, order: Order) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -89,8 +99,8 @@ class SQLiteStorage:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO fills (symbol, side, quantity, price, timestamp, commission)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO fills (symbol, side, quantity, price, timestamp, commission, stamp_duty, slippage_cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fill.symbol,
@@ -99,6 +109,8 @@ class SQLiteStorage:
                     fill.price,
                     fill.timestamp.isoformat(),
                     fill.commission,
+                    fill.stamp_duty,
+                    fill.slippage_cost,
                 ),
             )
 

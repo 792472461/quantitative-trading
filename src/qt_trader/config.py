@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field, field_validator
 class BacktestConfig(BaseModel):
     initial_cash: float = Field(default=100000.0, gt=0)
     commission_rate: float = Field(default=0.0003, ge=0)
+    min_commission: float = Field(default=5.0, ge=0)
+    stamp_duty_rate: float = Field(default=0.001, ge=0)
+    slippage_bps: float = Field(default=5.0, ge=0)
     max_position_pct: float = Field(default=0.2, gt=0, le=1)
     max_drawdown_pct: float = Field(default=0.12, gt=0, le=1)
 

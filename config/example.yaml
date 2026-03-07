@@ -6,6 +6,9 @@ data:
 backtest:
   initial_cash: 200000
   commission_rate: 0.0003
+  min_commission: 5.0
+  stamp_duty_rate: 0.001
+  slippage_bps: 5.0
   max_position_pct: 0.2
   max_drawdown_pct: 0.15
 strategy:

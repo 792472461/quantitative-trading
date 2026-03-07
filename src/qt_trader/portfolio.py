@@ -16,7 +16,8 @@ class Portfolio:
     def apply_fill(self, fill: Fill) -> None:
         position = self.positions.setdefault(fill.symbol, Position(symbol=fill.symbol))
         gross = fill.price * fill.quantity
-        cost = gross + fill.commission
+        total_fees = fill.total_fees
+        cost = gross + total_fees
 
         if fill.side == OrderSide.BUY:
             total_cost = position.average_cost * position.quantity + cost
@@ -25,7 +26,7 @@ class Portfolio:
             self.cash -= cost
         else:
             position.quantity -= fill.quantity
-            self.cash += gross - fill.commission
+            self.cash += gross - total_fees
             if position.quantity == 0:
                 position.average_cost = 0.0
 

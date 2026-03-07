@@ -54,6 +54,12 @@ class Fill:
     price: float
     timestamp: datetime
     commission: float = 0.0
+    stamp_duty: float = 0.0
+    slippage_cost: float = 0.0
+
+    @property
+    def total_fees(self) -> float:
+        return self.commission + self.stamp_duty
 
 
 @dataclass(slots=True)

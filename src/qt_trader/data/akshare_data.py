@@ -43,17 +43,23 @@ class AKShareDataFeed(MarketDataFeed):
         return frame
 
     def load(self) -> list[Bar]:
-        frame = self._fetch_frame()
-        normalized = pd.DataFrame(
-            {
-                "datetime": pd.to_datetime(frame["日期"]),
-                "open": frame["开盘"].astype(float),
-                "high": frame["最高"].astype(float),
-                "low": frame["最低"].astype(float),
-                "close": frame["收盘"].astype(float),
-                "volume": frame["成交量"].astype(float),
-            }
-        ).sort_values("datetime")
+        try:
+            frame = self._fetch_frame()
+            normalized = pd.DataFrame(
+                {
+                    "datetime": pd.to_datetime(frame["日期"]),
+                    "open": frame["开盘"].astype(float),
+                    "high": frame["最高"].astype(float),
+                    "low": frame["最低"].astype(float),
+                    "close": frame["收盘"].astype(float),
+                    "volume": frame["成交量"].astype(float),
+                }
+            ).sort_values("datetime")
+        except Exception:
+            if self.output_csv_path is None or not self.output_csv_path.exists():
+                raise
+            normalized = pd.read_csv(self.output_csv_path)
+            normalized["datetime"] = pd.to_datetime(normalized["datetime"])
 
         if self.output_csv_path is not None:
             self.output_csv_path.parent.mkdir(parents=True, exist_ok=True)

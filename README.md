@@ -12,6 +12,7 @@
 - 交易日历和交易时段判断
 - 结构化日志
 - 告警通道
+- 更真实的交易成本模型
 - 券商网关抽象层
 - 本地模拟撮合网关
 - SQLite 持久化
@@ -90,6 +91,10 @@ qt-trader version
 `run-session` 会先检查当前是否在交易时段内；`--force` 可用于离线演练。
 运行日志会写到 `logs/runtime.jsonl`，告警可输出到终端和 `logs/alerts.log`。
 
+## 项目文档
+
+持续维护文档在 [docs/PROJECT.md](F:/workspace/python/quantitative-trading/docs/PROJECT.md)，里面会记录项目概览、架构和每次迭代内容。
+
 ## 真实数据
 
 项目现在支持两种数据源：
@@ -98,5 +103,6 @@ qt-trader version
 - `akshare`: 拉取 A 股历史行情，适合先做真实数据接入
 
 可以参考 [config/akshare.yaml](F:/workspace/python/quantitative-trading/config/akshare.yaml) 抓取 A 股历史数据。
+如果 AKShare 临时不可用，而本地已经存在缓存 CSV，系统会自动回退到本地缓存。
 
 这些接口在本项目里都已经预留好了。
