@@ -15,6 +15,7 @@
 - 任务守护与自动恢复基础
 - 监控看板基础版 CLI
 - 券商账户同步骨架
+- 只读 broker 联调样例
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -55,6 +56,7 @@
 - `python -m qt_trader.cli runtime-state --config config/example.yaml`
 - `python -m qt_trader.cli dashboard --config config/example.yaml`
 - `python -m qt_trader.cli broker-account --config config/example.yaml`
+- `python -m qt_trader.cli broker-account --config config/readonly_broker.yaml`
 
 ## Iteration Log
 
@@ -137,6 +139,14 @@
 - 增加 dashboard 报表命令
 - 支持账户概览、事件和成交摘要查询
 - 为 CLI 监控看板打基础
+
+### 2026-03-07 - `3e788f7`
+
+`feat: add broker account sync scaffold`
+
+- 扩展 broker 接口到账户、持仓、委托查询
+- 增加 broker-account 命令
+- 为真实券商同步打下接口基础
 
 ### 2026-03-07 - In Progress
 

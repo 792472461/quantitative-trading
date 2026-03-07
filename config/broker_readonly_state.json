@@ -1,0 +1,45 @@
+{
+  "account": {
+    "account_id": "readonly-demo-001",
+    "cash": 84532.17,
+    "total_equity": 201845.12,
+    "buying_power": 84532.17,
+    "environment": "readonly"
+  },
+  "positions": [
+    {
+      "symbol": "600519.SH",
+      "quantity": 100,
+      "average_cost": 1520.35,
+      "market_price": 1568.22,
+      "market_value": 156822.0
+    },
+    {
+      "symbol": "000001.SZ",
+      "quantity": 2000,
+      "average_cost": 11.95,
+      "market_price": 12.25,
+      "market_value": 24500.0
+    }
+  ],
+  "orders": [
+    {
+      "symbol": "600519.SH",
+      "side": "BUY",
+      "quantity": 100,
+      "price": 1520.35,
+      "status": "FILLED",
+      "timestamp": "2026-03-06T10:15:00",
+      "reason": "manual_sync_sample"
+    },
+    {
+      "symbol": "000001.SZ",
+      "side": "BUY",
+      "quantity": 2000,
+      "price": 11.95,
+      "status": "FILLED",
+      "timestamp": "2026-03-06T14:20:00",
+      "reason": "manual_sync_sample"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import json
+import os
 
 import pandas as pd
 
@@ -344,3 +345,20 @@ def test_paper_broker_account_queries() -> None:
     assert account.cash == config.backtest.initial_cash
     assert positions == []
     assert orders == []
+
+
+def test_readonly_broker_account_queries() -> None:
+    config = load_config(Path("config/readonly_broker.yaml"))
+    os.environ[config.broker.api_key_env] = "demo-key"
+    os.environ[config.broker.api_secret_env] = "demo-secret"
+    os.environ[config.broker.account_id_env] = "readonly-demo-001"
+
+    broker = create_broker(config)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    assert account.environment == "readonly"
+    assert account.account_id == "readonly-demo-001"
+    assert len(positions) == 2
+    assert len(orders) == 2

@@ -57,10 +57,12 @@ class StrategyConfig(BaseModel):
 
 class BrokerConfig(BaseModel):
     provider: str = "paper"
+    read_only: bool = False
     api_key_env: str = "BROKER_API_KEY"
     api_secret_env: str = "BROKER_API_SECRET"
     account_id_env: str = "BROKER_ACCOUNT_ID"
     base_url: str | None = None
+    state_file: Path = Path("config/broker_readonly_state.json")
 
 
 class StorageConfig(BaseModel):

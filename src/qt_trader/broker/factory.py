@@ -4,6 +4,7 @@ import os
 
 from qt_trader.broker.base import BrokerGateway
 from qt_trader.broker.paper import PaperBroker
+from qt_trader.broker.readonly import ReadOnlyBroker
 from qt_trader.config import AppConfig
 from qt_trader.costs import ExecutionCostModel
 from qt_trader.portfolio import Portfolio
@@ -24,6 +25,27 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
                 slippage_bps=config.backtest.slippage_bps,
             ),
             portfolio=portfolio,
+        )
+
+    if provider == "readonly":
+        missing = [
+            env_name
+            for env_name in (
+                config.broker.api_key_env,
+                config.broker.api_secret_env,
+                config.broker.account_id_env,
+            )
+            if not os.getenv(env_name)
+        ]
+        if missing:
+            raise BrokerConfigurationError(
+                f"Broker provider '{config.broker.provider}' requires env vars: {', '.join(missing)}"
+            )
+        return ReadOnlyBroker(
+            broker_name="readonly",
+            account_id=os.getenv(config.broker.account_id_env, "readonly-account"),
+            state_file=config.broker.state_file,
+            environment="readonly",
         )
 
     missing = [
