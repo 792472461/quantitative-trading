@@ -51,3 +51,5 @@ market:
   afternoon_start: "13:00"
   afternoon_end: "15:00"
   holidays: []
+  makeup_workdays: []
+  holiday_files: [config/calendar_ashare_2026.json]

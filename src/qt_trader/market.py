@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
+import json
 from zoneinfo import ZoneInfo
 
 from qt_trader.config import MarketConfig
@@ -21,6 +23,8 @@ class TradingCalendar:
         self.config = config
         self.timezone = ZoneInfo(config.timezone)
         self.holidays = {date.fromisoformat(item) for item in config.holidays}
+        self.makeup_workdays = {date.fromisoformat(item) for item in config.makeup_workdays}
+        self._load_holiday_files(config.holiday_files)
         self.morning_start = self._parse_time(config.morning_start)
         self.morning_end = self._parse_time(config.morning_end)
         self.afternoon_start = self._parse_time(config.afternoon_start)
@@ -65,6 +69,8 @@ class TradingCalendar:
         )
 
     def is_trading_day(self, current_date: date) -> bool:
+        if current_date in self.makeup_workdays:
+            return True
         return current_date.weekday() in self.config.weekdays and current_date not in self.holidays
 
     def next_open_after(self, current_time: datetime) -> datetime:
@@ -95,3 +101,9 @@ class TradingCalendar:
     def _parse_time(value: str) -> time:
         hour, minute = value.split(":")
         return time(hour=int(hour), minute=int(minute))
+
+    def _load_holiday_files(self, holiday_files: list[Path]) -> None:
+        for file_path in holiday_files:
+            data = json.loads(Path(file_path).read_text(encoding="utf-8"))
+            self.holidays.update(date.fromisoformat(item) for item in data.get("holidays", []))
+            self.makeup_workdays.update(date.fromisoformat(item) for item in data.get("makeup_workdays", []))

@@ -92,6 +92,8 @@ class MarketConfig(BaseModel):
     afternoon_start: str = "13:00"
     afternoon_end: str = "15:00"
     holidays: list[str] = []
+    makeup_workdays: list[str] = []
+    holiday_files: list[Path] = []
 
 
 class AppConfig(BaseModel):

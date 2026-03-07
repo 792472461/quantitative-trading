@@ -155,12 +155,17 @@ def test_trading_calendar_and_scheduler() -> None:
     open_time = datetime.fromisoformat("2026-03-06T10:00:00")
     lunch_time = datetime.fromisoformat("2026-03-06T12:00:00")
     weekend_time = datetime.fromisoformat("2026-03-07T10:00:00")
+    holiday_time = datetime.fromisoformat("2026-10-01T10:00:00")
+    makeup_workday_time = datetime.fromisoformat("2026-02-14T10:00:00")
 
     assert calendar.status(open_time).is_open is True
     assert calendar.status(lunch_time).phase == "midday_break"
     assert calendar.status(weekend_time).is_trading_day is False
+    assert calendar.status(holiday_time).is_trading_day is False
+    assert calendar.status(makeup_workday_time).is_trading_day is True
     assert scheduler.should_run_now(open_time) is True
     assert scheduler.should_run_now(weekend_time) is False
+    assert scheduler.should_run_now(makeup_workday_time) is True
 
 
 def test_multi_symbol_backtest_runs() -> None:
