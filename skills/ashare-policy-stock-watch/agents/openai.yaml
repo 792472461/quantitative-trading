@@ -1,0 +1,3 @@
+interface:
+  display_name: "Ashare Policy Stock Watch"
+  short_description: "Refresh A-share policy-driven watchlists under a price cap"
