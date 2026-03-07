@@ -23,7 +23,7 @@ from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
 from qt_trader.alerts import AlertMessage, AlertNotifier
-from qt_trader.analytics import analyze_backtest
+from qt_trader.analytics import analyze_backtest, analyze_market_regimes
 from qt_trader import __version__
 
 app = typer.Typer(help="Production-oriented quantitative trading CLI.")
@@ -79,6 +79,26 @@ def render_backtest_metrics(metrics) -> None:
     summary.add_row("Calmar Ratio", f"{metrics.calmar_ratio:.2f}")
     summary.add_row("Expectancy", f"{metrics.expectancy:.2f}")
     console.print(summary)
+
+
+def render_market_regime_metrics(regime_metrics) -> None:
+    if not regime_metrics:
+        return
+    table = Table(title="Market Regime Breakdown")
+    table.add_column("Regime")
+    table.add_column("Periods", justify="right")
+    table.add_column("Total Return", justify="right")
+    table.add_column("Avg Period Return", justify="right")
+    table.add_column("Fills", justify="right")
+    for item in regime_metrics:
+        table.add_row(
+            item.regime,
+            str(item.periods),
+            f"{item.total_return_pct:.2f}%",
+            f"{item.average_period_return_pct:.4f}%",
+            str(item.fill_count),
+        )
+    console.print(table)
 
 
 def format_delta(value: float | int | None, precision: int = 2) -> str:
@@ -148,6 +168,15 @@ def backtest(config: Path = typer.Option(..., exists=True, readable=True, help="
     render_summary("Backtest Summary", final_snapshot, len(result.executed_orders), len(result.rejected_orders))
     metrics = analyze_backtest(result, app_config.backtest.initial_cash)
     render_backtest_metrics(metrics)
+    render_market_regime_metrics(
+        analyze_market_regimes(
+            result=result,
+            bars=bars,
+            benchmark_symbol=app_config.strategy.benchmark_symbol,
+            fast_window=app_config.strategy.market_fast_window,
+            slow_window=app_config.strategy.market_slow_window,
+        )
+    )
     persist_backtest_run(storage, app_config, metrics, final_snapshot.total_value)
     console.print(f"Backtest run stored in {app_config.storage.sqlite_path}")
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from math import sqrt
 
 from qt_trader.backtest import BacktestResult
-from qt_trader.models import Fill, OrderSide
+from qt_trader.models import Bar, Fill, OrderSide
 
 
 @dataclass(slots=True)
@@ -21,6 +21,15 @@ class BacktestMetrics:
     sharpe_ratio: float
     calmar_ratio: float
     expectancy: float
+
+
+@dataclass(slots=True)
+class MarketRegimeMetrics:
+    regime: str
+    periods: int
+    total_return_pct: float
+    average_period_return_pct: float
+    fill_count: int
 
 
 def analyze_backtest(result: BacktestResult, initial_cash: float) -> BacktestMetrics:
@@ -63,6 +72,66 @@ def analyze_backtest(result: BacktestResult, initial_cash: float) -> BacktestMet
         calmar_ratio=calmar_ratio,
         expectancy=expectancy,
     )
+
+
+def analyze_market_regimes(
+    result: BacktestResult,
+    bars: list[Bar],
+    benchmark_symbol: str | None,
+    fast_window: int,
+    slow_window: int,
+) -> list[MarketRegimeMetrics]:
+    if not benchmark_symbol:
+        return []
+
+    benchmark_bars = [bar for bar in bars if bar.symbol == benchmark_symbol]
+    if len(benchmark_bars) < slow_window:
+        return []
+
+    regime_by_timestamp = _benchmark_regimes(benchmark_bars, fast_window, slow_window)
+    if not regime_by_timestamp:
+        return []
+
+    stats: dict[str, dict[str, float | int]] = {}
+    for previous, current in zip(result.snapshots, result.snapshots[1:]):
+        regime = regime_by_timestamp.get(current.timestamp)
+        if regime is None or previous.total_value <= 0:
+            continue
+        period_return = current.total_value / previous.total_value - 1
+        bucket = stats.setdefault(
+            regime,
+            {"periods": 0, "cumulative_factor": 1.0, "sum_returns": 0.0, "fill_count": 0},
+        )
+        bucket["periods"] = int(bucket["periods"]) + 1
+        bucket["cumulative_factor"] = float(bucket["cumulative_factor"]) * (1 + period_return)
+        bucket["sum_returns"] = float(bucket["sum_returns"]) + period_return
+
+    fill_regimes: dict[str, int] = {}
+    for fill in result.fills:
+        regime = regime_by_timestamp.get(fill.timestamp)
+        if regime is None:
+            continue
+        fill_regimes[regime] = fill_regimes.get(regime, 0) + 1
+
+    ordered_regimes = ["bull", "bear", "sideways"]
+    metrics: list[MarketRegimeMetrics] = []
+    for regime in ordered_regimes:
+        bucket = stats.get(regime)
+        if bucket is None:
+            continue
+        periods = int(bucket["periods"])
+        cumulative_factor = float(bucket["cumulative_factor"])
+        sum_returns = float(bucket["sum_returns"])
+        metrics.append(
+            MarketRegimeMetrics(
+                regime=regime,
+                periods=periods,
+                total_return_pct=(cumulative_factor - 1) * 100,
+                average_period_return_pct=(sum_returns / periods) * 100 if periods else 0.0,
+                fill_count=fill_regimes.get(regime, 0),
+            )
+        )
+    return metrics
 
 
 def _annualized_return_pct(snapshots, initial_cash: float, final_equity: float) -> float:
@@ -128,3 +197,25 @@ def _round_trip_pnls(fills: list[Fill]) -> list[float]:
                 queue[0] = (buy_quantity, buy_price)
 
     return trade_pnls
+
+
+def _benchmark_regimes(
+    benchmark_bars: list[Bar],
+    fast_window: int,
+    slow_window: int,
+) -> dict:
+    closes: list[float] = []
+    regime_by_timestamp: dict = {}
+    for bar in benchmark_bars:
+        closes.append(bar.close)
+        if len(closes) < slow_window:
+            continue
+        fast = sum(closes[-fast_window:]) / fast_window
+        slow = sum(closes[-slow_window:]) / slow_window
+        regime = "sideways"
+        if fast > slow:
+            regime = "bull"
+        elif fast < slow:
+            regime = "bear"
+        regime_by_timestamp[bar.timestamp] = regime
+    return regime_by_timestamp

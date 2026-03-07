@@ -8,7 +8,7 @@ import types
 import pandas as pd
 
 from qt_trader.alerts import AlertNotifier
-from qt_trader.analytics import analyze_backtest
+from qt_trader.analytics import analyze_backtest, analyze_market_regimes
 from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
@@ -834,6 +834,58 @@ def test_backtest_analytics_computes_trade_metrics() -> None:
     assert metrics.total_return_pct != 0
     assert metrics.sharpe_ratio != 0
     assert metrics.expectancy != 0
+
+
+def test_market_regime_analysis_breaks_down_returns_by_benchmark_state() -> None:
+    benchmark_bars = [
+        Bar("000300.SH", datetime.fromisoformat("2026-03-02T09:30:00"), 10, 10, 10, 10, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-03T09:30:00"), 11, 11, 11, 11, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-04T09:30:00"), 12, 12, 12, 12, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-05T09:30:00"), 11, 11, 11, 11, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-06T09:30:00"), 10, 10, 10, 10, 1000),
+        Bar("000300.SH", datetime.fromisoformat("2026-03-09T09:30:00"), 10, 10, 10, 10, 1000),
+    ]
+    trade_bars = [
+        Bar("600519.SH", datetime.fromisoformat("2026-03-02T09:31:00"), 100, 100, 100, 100, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-03T09:31:00"), 101, 101, 101, 101, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-04T09:31:00"), 102, 102, 102, 102, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-05T09:31:00"), 101, 101, 101, 101, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-06T09:31:00"), 100, 100, 100, 100, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-09T09:31:00"), 100, 100, 100, 100, 1000),
+    ]
+    bars = sorted(benchmark_bars + trade_bars, key=lambda item: (item.timestamp, item.symbol))
+    portfolio = Portfolio(initial_cash=100000)
+    engine = BacktestEngine(
+        strategy=MovingAverageCrossStrategy(
+            symbols=["600519.SH"],
+            fast_window=2,
+            slow_window=3,
+            trade_size=10,
+        ),
+        broker=create_broker(load_config(Path("config/example.yaml")), portfolio=portfolio),
+        portfolio=portfolio,
+        risk_manager=RiskManager(
+            max_position_pct=0.5,
+            max_drawdown_pct=0.5,
+            max_total_exposure_pct=1.0,
+            max_positions=5,
+            max_symbol_quantity=1000,
+        ),
+    )
+    result = engine.run(bars)
+
+    regime_metrics = analyze_market_regimes(
+        result=result,
+        bars=bars,
+        benchmark_symbol="000300.SH",
+        fast_window=2,
+        slow_window=3,
+    )
+
+    assert regime_metrics
+    regimes = {item.regime for item in regime_metrics}
+    assert "bull" in regimes
+    assert "bear" in regimes or "sideways" in regimes
 
 
 def test_parameter_sweep_returns_ranked_results() -> None:
