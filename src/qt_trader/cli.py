@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
@@ -305,6 +305,23 @@ def broker_account(config: Path = typer.Option(..., exists=True, readable=True, 
 
 
 @app.command()
+def broker_sync(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    portfolio = Portfolio(initial_cash=app_config.backtest.initial_cash)
+    broker = create_broker(app_config, portfolio=portfolio)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+    synced_at = datetime.now().isoformat()
+    storage.save_broker_snapshot(account, positions, orders, synced_at)
+    console.print(
+        f"Broker snapshot synced at {synced_at}: "
+        f"{len(positions)} positions, {len(orders)} orders for {account.account_id}"
+    )
+
+
+@app.command()
 def dashboard(
     config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
     event_limit: int = typer.Option(5, min=1, max=50, help="Number of recent events to display."),
@@ -319,10 +336,33 @@ def dashboard(
     overview.add_row("Orders", str(summary.orders))
     overview.add_row("Fills", str(summary.fills))
     overview.add_row("Events", str(summary.events))
+    overview.add_row("Synced Accounts", str(summary.synced_accounts))
+    overview.add_row("Synced Positions", str(summary.synced_positions))
+    overview.add_row("Synced Broker Orders", str(summary.synced_broker_orders))
     overview.add_row("Latest Equity", "-" if summary.latest_equity is None else f"{summary.latest_equity:.2f}")
     overview.add_row("Latest Cash", "-" if summary.latest_cash is None else f"{summary.latest_cash:.2f}")
     overview.add_row("Latest Drawdown", "-" if summary.latest_drawdown is None else f"{summary.latest_drawdown:.2%}")
     console.print(overview)
+
+    broker_account_snapshot = storage.latest_broker_account()
+    broker_table = Table(title="Latest Synced Broker Account")
+    broker_table.add_column("Metric")
+    broker_table.add_column("Value", justify="right")
+    if broker_account_snapshot is not None:
+        broker_table.add_row("Synced At", str(broker_account_snapshot["synced_at"]))
+        broker_table.add_row("Account ID", str(broker_account_snapshot["account_id"]))
+        broker_table.add_row("Broker", str(broker_account_snapshot["broker"]))
+        broker_table.add_row("Environment", str(broker_account_snapshot["environment"]))
+        broker_table.add_row("Cash", f"{float(broker_account_snapshot['cash']):.2f}")
+        broker_table.add_row("Total Equity", f"{float(broker_account_snapshot['total_equity']):.2f}")
+    else:
+        broker_table.add_row("Synced At", "-")
+        broker_table.add_row("Account ID", "-")
+        broker_table.add_row("Broker", "-")
+        broker_table.add_row("Environment", "-")
+        broker_table.add_row("Cash", "-")
+        broker_table.add_row("Total Equity", "-")
+    console.print(broker_table)
 
     symbol_rows = storage.symbol_fill_summary()
     symbol_table = Table(title="Fill Summary By Symbol")

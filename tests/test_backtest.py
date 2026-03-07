@@ -362,3 +362,27 @@ def test_readonly_broker_account_queries() -> None:
     assert account.account_id == "readonly-demo-001"
     assert len(positions) == 2
     assert len(orders) == 2
+
+
+def test_broker_snapshot_sync_to_storage(tmp_path: Path) -> None:
+    config = load_config(Path("config/readonly_broker.yaml"))
+    config.storage.sqlite_path = tmp_path / "broker_sync.db"
+    os.environ[config.broker.api_key_env] = "demo-key"
+    os.environ[config.broker.api_secret_env] = "demo-secret"
+    os.environ[config.broker.account_id_env] = "readonly-demo-001"
+
+    storage = SQLiteStorage(config.storage.sqlite_path)
+    broker = create_broker(config)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+    storage.save_broker_snapshot(account, positions, orders, "2026-03-07T12:00:00")
+
+    counts = storage.counts()
+    latest_account = storage.latest_broker_account()
+
+    assert counts["broker_accounts"] == 1
+    assert counts["broker_positions"] == 2
+    assert counts["broker_orders"] == 2
+    assert latest_account is not None
+    assert latest_account["account_id"] == "readonly-demo-001"

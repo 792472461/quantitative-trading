@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from qt_trader.models import Fill, Order, PortfolioSnapshot, RuntimeEvent
+from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PortfolioSnapshot, PositionInfo, RuntimeEvent
 
 
 @dataclass(slots=True)
@@ -12,6 +12,9 @@ class DashboardSummary:
     orders: int
     fills: int
     events: int
+    synced_accounts: int
+    synced_positions: int
+    synced_broker_orders: int
     latest_equity: float | None
     latest_cash: float | None
     latest_drawdown: float | None
@@ -77,6 +80,50 @@ class SQLiteStorage:
                     timestamp TEXT NOT NULL,
                     severity TEXT NOT NULL,
                     message TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS broker_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    synced_at TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    broker TEXT NOT NULL,
+                    cash REAL NOT NULL,
+                    total_equity REAL NOT NULL,
+                    buying_power REAL NOT NULL,
+                    environment TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS broker_positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    synced_at TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    average_cost REAL NOT NULL,
+                    market_price REAL NOT NULL,
+                    market_value REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS broker_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    synced_at TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price REAL,
+                    status TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    reason TEXT NOT NULL
                 )
                 """
             )
@@ -162,7 +209,76 @@ class SQLiteStorage:
             fills = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
             snapshots = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
             events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-        return {"orders": orders, "fills": fills, "snapshots": snapshots, "events": events}
+            broker_accounts = conn.execute("SELECT COUNT(*) FROM broker_accounts").fetchone()[0]
+            broker_positions = conn.execute("SELECT COUNT(*) FROM broker_positions").fetchone()[0]
+            broker_orders = conn.execute("SELECT COUNT(*) FROM broker_orders").fetchone()[0]
+        return {
+            "orders": orders,
+            "fills": fills,
+            "snapshots": snapshots,
+            "events": events,
+            "broker_accounts": broker_accounts,
+            "broker_positions": broker_positions,
+            "broker_orders": broker_orders,
+        }
+
+    def save_broker_snapshot(
+        self,
+        account: AccountInfo,
+        positions: list[PositionInfo],
+        orders: list[OrderInfo],
+        synced_at: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO broker_accounts (synced_at, account_id, broker, cash, total_equity, buying_power, environment)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    synced_at,
+                    account.account_id,
+                    account.broker,
+                    account.cash,
+                    account.total_equity,
+                    account.buying_power,
+                    account.environment,
+                ),
+            )
+            for position in positions:
+                conn.execute(
+                    """
+                    INSERT INTO broker_positions (synced_at, account_id, symbol, quantity, average_cost, market_price, market_value)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        synced_at,
+                        account.account_id,
+                        position.symbol,
+                        position.quantity,
+                        position.average_cost,
+                        position.market_price,
+                        position.market_value,
+                    ),
+                )
+            for order in orders:
+                conn.execute(
+                    """
+                    INSERT INTO broker_orders (synced_at, account_id, symbol, side, quantity, price, status, timestamp, reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        synced_at,
+                        account.account_id,
+                        order.symbol,
+                        order.side,
+                        order.quantity,
+                        order.price,
+                        order.status,
+                        order.timestamp.isoformat(),
+                        order.reason,
+                    ),
+                )
 
     def dashboard_summary(self) -> DashboardSummary:
         counts = self.counts()
@@ -181,6 +297,9 @@ class SQLiteStorage:
                 orders=counts["orders"],
                 fills=counts["fills"],
                 events=counts["events"],
+                synced_accounts=counts["broker_accounts"],
+                synced_positions=counts["broker_positions"],
+                synced_broker_orders=counts["broker_orders"],
                 latest_equity=None,
                 latest_cash=None,
                 latest_drawdown=None,
@@ -190,6 +309,9 @@ class SQLiteStorage:
             orders=counts["orders"],
             fills=counts["fills"],
             events=counts["events"],
+            synced_accounts=counts["broker_accounts"],
+            synced_positions=counts["broker_positions"],
+            synced_broker_orders=counts["broker_orders"],
             latest_equity=float(latest_snapshot[0]),
             latest_cash=float(latest_snapshot[1]),
             latest_drawdown=float(latest_snapshot[2]),
@@ -239,3 +361,25 @@ class SQLiteStorage:
             }
             for row in rows
         ]
+
+    def latest_broker_account(self) -> dict[str, str | float] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT synced_at, account_id, broker, cash, total_equity, buying_power, environment
+                FROM broker_accounts
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "synced_at": str(row[0]),
+            "account_id": str(row[1]),
+            "broker": str(row[2]),
+            "cash": float(row[3]),
+            "total_equity": float(row[4]),
+            "buying_power": float(row[5]),
+            "environment": str(row[6]),
+        }
