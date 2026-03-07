@@ -17,6 +17,7 @@
 - 券商账户同步骨架
 - 只读 broker 联调样例
 - broker 账户快照落库
+- HTTP 只读 broker 骨架
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -59,6 +60,7 @@
 - `python -m qt_trader.cli broker-account --config config/example.yaml`
 - `python -m qt_trader.cli broker-account --config config/readonly_broker.yaml`
 - `python -m qt_trader.cli broker-sync --config config/readonly_broker.yaml`
+- `python -m qt_trader.cli broker-account --config config/http_readonly_broker.yaml`
 
 ## Iteration Log
 
@@ -157,6 +159,14 @@
 - 增加 readonly broker 适配器
 - 增加只读联调配置和账户样例快照
 - 明确禁止真实下单，仅允许查询
+
+### 2026-03-07 - `ee0cbc2`
+
+`feat: persist readonly broker snapshots`
+
+- 增加 broker-sync 命令
+- 支持只读 broker 账户快照落库
+- 让 dashboard 复用同步后的账户摘要
 
 ### 2026-03-07 - In Progress
 

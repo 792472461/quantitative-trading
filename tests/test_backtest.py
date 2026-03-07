@@ -7,6 +7,7 @@ import pandas as pd
 
 from qt_trader.alerts import AlertNotifier
 from qt_trader.backtest import BacktestEngine
+from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
@@ -386,3 +387,79 @@ def test_broker_snapshot_sync_to_storage(tmp_path: Path) -> None:
     assert counts["broker_orders"] == 2
     assert latest_account is not None
     assert latest_account["account_id"] == "readonly-demo-001"
+
+
+def test_http_readonly_broker_queries() -> None:
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self.payload
+
+    class FakeSession:
+        def get(self, url: str, *, headers: dict[str, str], timeout: float):
+            if url.endswith("/account"):
+                return FakeResponse(
+                    {
+                        "account": {
+                            "account_id": "http-demo-001",
+                            "cash": 100000,
+                            "total_equity": 123456,
+                            "buying_power": 99999,
+                            "environment": "readonly",
+                        }
+                    }
+                )
+            if url.endswith("/positions"):
+                return FakeResponse(
+                    {
+                        "positions": [
+                            {
+                                "symbol": "600519.SH",
+                                "quantity": 10,
+                                "average_cost": 1500.0,
+                                "market_price": 1550.0,
+                                "market_value": 15500.0,
+                            }
+                        ]
+                    }
+                )
+            return FakeResponse(
+                {
+                    "orders": [
+                        {
+                            "symbol": "600519.SH",
+                            "side": "BUY",
+                            "quantity": 10,
+                            "price": 1500.0,
+                            "status": "FILLED",
+                            "timestamp": "2026-03-07T09:35:00",
+                            "reason": "api_sync_sample",
+                        }
+                    ]
+                }
+            )
+
+    broker = HTTPReadOnlyBroker(
+        broker_name="http_readonly",
+        account_id="http-demo-001",
+        base_url="https://broker.example.com/api/v1",
+        account_endpoint="/account",
+        positions_endpoint="/positions",
+        orders_endpoint="/orders",
+        api_key="demo-key",
+        api_secret="demo-secret",
+        session=FakeSession(),
+    )
+
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+
+    assert account.account_id == "http-demo-001"
+    assert len(positions) == 1
+    assert len(orders) == 1

@@ -63,6 +63,10 @@ class BrokerConfig(BaseModel):
     account_id_env: str = "BROKER_ACCOUNT_ID"
     base_url: str | None = None
     state_file: Path = Path("config/broker_readonly_state.json")
+    account_endpoint: str = "/account"
+    positions_endpoint: str = "/positions"
+    orders_endpoint: str = "/orders"
+    timeout_seconds: float = Field(default=10.0, gt=0)
 
 
 class StorageConfig(BaseModel):
