@@ -9,6 +9,7 @@
 - CSV 行情驱动的回测引擎
 - AKShare A 股历史行情接入
 - 基础风险控制
+- 交易日历和交易时段判断
 - 券商网关抽象层
 - 本地模拟撮合网关
 - SQLite 持久化
@@ -30,6 +31,7 @@ pip install -e .[dev]
 qt-trader backtest --config config\example.yaml
 qt-trader paper-trade --config config\example.yaml
 qt-trader fetch-data --config config\akshare.yaml
+qt-trader market-status --config config\example.yaml
 ```
 
 ## 项目结构
@@ -59,10 +61,10 @@ tests/
 - 模拟下单和风控校验
 - 记录订单、成交和资金曲线
 - 运行 paper trading 主链路
+- 基于交易时段控制是否执行
 
 要进入真实实盘，还需要补：
 
-- 真实行情接入
 - 真实券商 API 适配实现
 - 交易日历、滑点、手续费细化
 - 监控告警
@@ -73,10 +75,13 @@ tests/
 qt-trader backtest --config config\example.yaml
 qt-trader paper-trade --config config\example.yaml
 qt-trader fetch-data --config config\akshare.yaml
+qt-trader market-status --config config\example.yaml
+qt-trader run-session --config config\example.yaml --force
 qt-trader version
 ```
 
 `paper-trade` 会把订单、成交和资金快照写入 SQLite 数据库，默认文件是 `trading.db`。
+`run-session` 会先检查当前是否在交易时段内；`--force` 可用于离线演练。
 
 ## 真实数据
 

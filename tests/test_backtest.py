@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -7,9 +8,11 @@ from qt_trader.broker.factory import create_broker
 from qt_trader.config import load_config
 from qt_trader.data.akshare_data import AKShareDataFeed
 from qt_trader.data.factory import create_data_feed
+from qt_trader.market import TradingCalendar
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
+from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
 
@@ -100,3 +103,19 @@ def test_akshare_feed_normalizes_and_exports_csv(tmp_path: Path) -> None:
 
     assert len(bars) == 2
     assert export_path.exists()
+
+
+def test_trading_calendar_and_scheduler() -> None:
+    config = load_config(Path("config/example.yaml"))
+    calendar = TradingCalendar(config.market)
+    scheduler = SessionScheduler(calendar)
+
+    open_time = datetime.fromisoformat("2026-03-06T10:00:00")
+    lunch_time = datetime.fromisoformat("2026-03-06T12:00:00")
+    weekend_time = datetime.fromisoformat("2026-03-07T10:00:00")
+
+    assert calendar.status(open_time).is_open is True
+    assert calendar.status(lunch_time).phase == "midday_break"
+    assert calendar.status(weekend_time).is_trading_day is False
+    assert scheduler.should_run_now(open_time) is True
+    assert scheduler.should_run_now(weekend_time) is False

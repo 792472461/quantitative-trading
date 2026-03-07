@@ -29,3 +29,11 @@ storage:
 runtime:
   polling_interval_seconds: 1.0
   persist_snapshots: true
+market:
+  timezone: Asia/Shanghai
+  weekdays: [0, 1, 2, 3, 4]
+  morning_start: "09:30"
+  morning_end: "11:30"
+  afternoon_start: "13:00"
+  afternoon_end: "15:00"
+  holidays: []

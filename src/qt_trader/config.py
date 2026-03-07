@@ -54,6 +54,16 @@ class RuntimeConfig(BaseModel):
     persist_snapshots: bool = True
 
 
+class MarketConfig(BaseModel):
+    timezone: str = "Asia/Shanghai"
+    weekdays: list[int] = [0, 1, 2, 3, 4]
+    morning_start: str = "09:30"
+    morning_end: str = "11:30"
+    afternoon_start: str = "13:00"
+    afternoon_end: str = "15:00"
+    holidays: list[str] = []
+
+
 class AppConfig(BaseModel):
     environment: str = "paper"
     data: DataConfig
@@ -62,6 +72,7 @@ class AppConfig(BaseModel):
     broker: BrokerConfig = BrokerConfig()
     storage: StorageConfig = StorageConfig()
     runtime: RuntimeConfig = RuntimeConfig()
+    market: MarketConfig = MarketConfig()
 
 
 def load_config(path: str | Path) -> AppConfig:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 from rich.console import Console
 from rich.table import Table
@@ -10,9 +11,11 @@ from qt_trader.backtest import BacktestEngine
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
 from qt_trader.config import load_config
 from qt_trader.data.factory import create_data_feed
+from qt_trader.market import TradingCalendar
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.runtime import PaperTradingRuntime
+from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
 from qt_trader import __version__
@@ -114,6 +117,62 @@ def fetch_data(config: Path = typer.Option(..., exists=True, readable=True, help
     console.print(f"Fetched {len(bars)} bars for {app_config.data.symbol} via {app_config.data.provider}.")
     if app_config.data.output_csv_path is not None:
         console.print(f"Saved normalized CSV to {app_config.data.output_csv_path}")
+
+
+@app.command()
+def market_status(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    at: str | None = typer.Option(None, help="Optional local time, format: YYYY-MM-DDTHH:MM:SS"),
+) -> None:
+    app_config = load_config(config)
+    calendar = TradingCalendar(app_config.market)
+    current_time = datetime.fromisoformat(at) if at else None
+    status = calendar.status(current_time)
+
+    summary = Table(title="Market Status")
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Timezone", app_config.market.timezone)
+    summary.add_row("Current Time", status.current_time.isoformat())
+    summary.add_row("Trading Day", str(status.is_trading_day))
+    summary.add_row("Market Open", str(status.is_open))
+    summary.add_row("Phase", status.phase)
+    summary.add_row("Next Open", status.next_open.isoformat())
+    console.print(summary)
+
+
+@app.command()
+def run_session(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    force: bool = typer.Option(False, help="Run even if market is currently closed."),
+) -> None:
+    app_config = load_config(config)
+    scheduler = SessionScheduler(TradingCalendar(app_config.market))
+    if not force and not scheduler.should_run_now():
+        console.print(f"[yellow]Session blocked: {scheduler.describe()}[/yellow]")
+        raise typer.Exit(code=1)
+
+    bars = create_data_feed(app_config).load()
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    runtime = PaperTradingRuntime(
+        strategy=build_strategy(app_config),
+        broker=create_broker(app_config),
+        portfolio=Portfolio(initial_cash=app_config.backtest.initial_cash),
+        risk_manager=RiskManager(
+            max_position_pct=app_config.backtest.max_position_pct,
+            max_drawdown_pct=app_config.backtest.max_drawdown_pct,
+        ),
+        storage=storage,
+        persist_snapshots=app_config.runtime.persist_snapshots,
+        sleep_seconds=0.0,
+    )
+    result = runtime.run(bars)
+    final_snapshot = result.snapshots[-1] if result.snapshots else None
+    if final_snapshot is None:
+        console.print("[red]No market data loaded.[/red]")
+        raise typer.Exit(code=1)
+
+    render_summary("Session Summary", final_snapshot, len(result.executed_orders), len(result.rejected_orders))
 
 
 @app.command("version")
