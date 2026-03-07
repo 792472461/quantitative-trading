@@ -1,3 +1,3 @@
 interface:
-  display_name: "Ashare Policy Stock Watch"
-  short_description: "Refresh A-share policy-driven watchlists under a price cap"
+  display_name: "A股政策主题选股"
+  short_description: "按政策主线和价格上限刷新A股观察池"

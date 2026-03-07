@@ -1,81 +1,81 @@
 ---
 name: ashare-policy-stock-watch
-description: Use this skill when the user wants current A-share stock ideas filtered by recent policy direction, sector themes, and practical trading constraints such as a share price cap below CNY 100.
+description: 当用户需要按照最新政策方向、板块主题和实用交易约束筛选 A 股候选股票时使用本技能，例如限制股价不超过 100 元。
 ---
 
-# Ashare Policy Stock Watch
+# A 股政策主题选股
 
-## Overview
+## 概览
 
-Use this skill to build or refresh a short list of A-share candidate stocks that fit current national or provincial policy direction and satisfy simple execution filters such as `price <= 100 CNY`.
+用这个技能来生成或刷新一份 A 股候选股短名单，核心目标是让股票同时满足“政策主线相关”和“便于实际跟踪”这两个条件，比如 `股价 <= 100 元`。
 
-The skill is for research support, not personalized investment advice. Always present candidates as `policy-aligned watchlist names` with clear risks, dates, and sources.
+这个技能用于研究支持，不是个性化投资建议。输出时要把候选股明确写成“政策主线观察池”，并附上风险、日期和来源。
 
-Load [references/workflow.md](./references/workflow.md) when you need the detailed filtering workflow and output template.
+需要详细筛选流程和输出模板时，加载 [references/workflow.md](./references/workflow.md)。
 
-## When To Use
+## 适用场景
 
-Use this skill when the user asks for any of the following:
+当用户有下面这些需求时使用这个技能：
 
-- Recommend a few A-share stocks based on current policy themes
-- Refresh a watchlist of sectors or stocks tied to recent government policy
-- Filter A-share names by policy direction plus a price ceiling such as `<= 100`
-- Produce a reusable routine for periodically updating policy-driven stock candidates
+- 想按最新政策主线推荐几只 A 股
+- 想定期刷新和政府政策相关的板块或股票观察池
+- 想在“政策方向 + 股价上限（例如 `<= 100`）”条件下筛股
+- 想做一套可重复使用的政策主题选股更新流程
 
-## Workflow
+## 工作流程
 
-1. Identify the latest policy themes from primary sources first.
-   Prioritize `gov.cn`, `ndrc.gov.cn`, `miit.gov.cn`, `csrc.gov.cn`, major exchange notices, and provincial government policy pages when local support matters.
+1. 先从一手来源识别最新政策主题。
+   优先看 `gov.cn`、`ndrc.gov.cn`、`miit.gov.cn`、`csrc.gov.cn`、交易所公告，以及必要时的地方政府政策页面。
 
-2. Convert policy language into investable sectors.
-   Examples: low-altitude economy, embodied AI and robotics, commercial aerospace, advanced materials, industrial AI, new energy equipment.
+2. 把政策语言翻译成可投资的板块方向。
+   例如：低空经济、具身智能与机器人、商业航天、新材料、工业 AI、新能源装备。
 
-3. Screen candidate A-shares.
-   Apply at minimum:
-- `latest observed share price <= 100 CNY`
-- not `ST` or `*ST`
-- not suspended if that information is available
-- avoid names with obviously poor liquidity when turnover data is easy to verify
-- prefer companies with business linkage that is specific, not only concept-tag driven
+3. 筛选候选 A 股。
+   至少应用以下条件：
+- `最新观察到的股价 <= 100 元`
+- 不是 `ST` 或 `*ST`
+- 如果能查到，就排除停牌股
+- 如果换手和成交额很容易核验，就尽量排除流动性明显偏差的股票
+- 优先选择业务关联具体清晰的公司，而不是只有概念标签的公司
 
-4. Produce a compact watchlist.
-   For each stock include:
-- ticker and company name
-- sector or theme
-- policy driver
-- latest observed price and date
-- why it fits
-- one key risk
+4. 输出简洁的观察池。
+   每只股票至少包含：
+- 代码和名称
+- 所属主题或板块
+- 对应政策驱动
+- 最新观察价格和日期
+- 入选原因
+- 一个主要风险点
 
-5. Add cautionary framing.
-   State that prices and policy interpretation can change quickly and should be rechecked before trading.
+5. 补充风险提示。
+   说明股价和政策解读变化都可能很快，交易前需要重新核验。
 
-## Output Rules
+## 输出规则
 
-- Keep the list short, usually `3 to 7` names.
-- Use current web verification for price-sensitive facts.
-- Include exact dates when saying `latest`, `recent`, `today`, or `current`.
-- Separate `policy fit` from `trading quality`; do not imply a policy theme alone is a buy signal.
-- If policy support is broad but the stock linkage is weak, say so explicitly.
-- Do not present the output as certain or guaranteed.
+- 名单保持精简，通常 `3 到 7` 只即可。
+- 涉及价格的事实必须用当前网页信息核验。
+- 只要提到“最新”“最近”“今天”“当前”，就带上具体日期。
+- 明确区分“政策相关性”和“交易质量”，不要把政策主线直接等同于买入信号。
+- 如果政策支持很宽泛，但股票和主题的业务关联偏弱，要直接指出。
+- 不要把结论写成确定性判断或收益承诺。
 
-## Default Response Shape
+## 默认输出结构
 
-Use a structure close to this:
+尽量按这个结构输出：
 
-1. `Policy themes worth watching`
-2. `Filtered A-share candidates`
-3. `Risks and what to recheck next`
+1. `值得跟踪的政策主线`
+2. `筛选后的 A 股候选股`
+3. `主要风险和下次需要复核的点`
 
-For each candidate, prefer one line like:
+每只候选股尽量用一行表达，例如：
 
-`000099 CITIC Offshore Helicopter | low-altitude economy | latest observed price about XX CNY on YYYY-MM-DD | policy fit: ... | risk: ...`
+`000099 中信海直 | 低空经济 | YYYY-MM-DD 最新观察价格约 XX 元 | 政策对应点：... | 风险：...`
 
-## Resources
+## 资源
 
 ### references/
-Use [references/workflow.md](./references/workflow.md) for:
-- source priority
-- policy-to-sector mapping
-- screening checklist
-- output template
+用 [references/workflow.md](./references/workflow.md) 查看：
+- 来源优先级
+- 政策到板块的映射方法
+- 筛选检查清单
+- 输出模板

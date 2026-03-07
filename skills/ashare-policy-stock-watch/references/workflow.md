@@ -1,56 +1,56 @@
-# A-share Policy Watch Workflow
+# A 股政策主题选股流程
 
-## Goal
+## 目标
 
-Refresh a short A-share watchlist driven by current policy direction while keeping the names practically tradable for retail research.
+定期刷新一份由最新政策方向驱动的 A 股观察池，同时尽量保证这些股票便于普通投资者实际跟踪。
 
-## Source Priority
+## 来源优先级
 
-Use sources in this order:
+按下面的顺序找资料：
 
-1. National policy and ministry sources
-   `gov.cn`, `ndrc.gov.cn`, `miit.gov.cn`, `moa.gov.cn`, `nea.gov.cn`, `csrc.gov.cn`
-2. Exchange and listed company disclosures
-   `sse.com.cn`, `szse.cn`, `cninfo.com.cn`
-3. Company investor relations or official sites
-4. Market data and finance portals only for latest observable price checks if official pages are not easy to read
+1. 国家政策和部委来源
+   `gov.cn`、`ndrc.gov.cn`、`miit.gov.cn`、`moa.gov.cn`、`nea.gov.cn`、`csrc.gov.cn`
+2. 交易所和上市公司公告
+   `sse.com.cn`、`szse.cn`、`cninfo.com.cn`
+3. 公司官网或投资者关系页面
+4. 如果官方页面不方便直接看价格，再用财经网站核验“最新观察价格”
 
-For prices, clearly say `latest observed` and include the date you verified it.
+涉及价格时，明确写成“最新观察价格”，并带上核验日期。
 
-## Policy Theme Mapping
+## 政策主题映射
 
-Common mappings:
+常见映射方式：
 
-- `low-altitude economy` -> helicopters, eVTOL, avionics, air traffic support, composites
-- `embodied AI / robotics / AI+` -> industrial robots, servo systems, machine vision, industrial software, smart terminals
-- `commercial aerospace` -> aerospace materials, satellite components, launch support, precision manufacturing
-- `new productive forces / smart manufacturing` -> industrial automation, process control, industrial AI, high-end equipment
-- `advanced materials` -> titanium alloys, advanced composites, rare metals, special alloys
+- `低空经济` -> 直升机、eVTOL、航电、空管支持、复合材料
+- `具身智能 / 机器人 / 人工智能+` -> 工业机器人、伺服系统、机器视觉、工业软件、智能终端
+- `商业航天` -> 航天材料、卫星零部件、发射支持、精密制造
+- `新质生产力 / 智能制造` -> 工业自动化、过程控制、工业 AI、高端装备
+- `新材料` -> 钛合金、先进复合材料、稀有金属、特种合金
 
-## Screening Checklist
+## 筛选清单
 
-A candidate should satisfy most of the following:
+候选股最好满足大部分条件：
 
-- share price is `<= 100 CNY`
-- business linkage to the theme is specific and disclosed, not only concept-board tagging
-- not `ST` or `*ST`
-- no obvious trading suspension
-- no clear red-flag event dominating the story, such as severe earnings collapse or major compliance issue, unless you call it out explicitly
+- 股价 `<= 100 元`
+- 业务和主题的关系具体且可披露验证，不只是概念板块标签
+- 不是 `ST` 或 `*ST`
+- 没有明显停牌情况
+- 没有特别突出的红旗风险主导逻辑，比如业绩严重恶化或重大合规问题；如果有，必须明确写出来
 
-## Output Template
+## 输出模板
 
-Use this compact format:
+尽量使用这种简洁格式：
 
-`ticker | name | theme | latest observed price | policy fit | why it is on the list | main risk`
+`代码 | 名称 | 主题 | 最新观察价格 | 政策对应点 | 入选原因 | 主要风险`
 
-Then add:
+然后补充：
 
-- why these names passed the filter
-- what would make them leave the list next time
-- what the user should recheck before trading
+- 这些股票为什么通过筛选
+- 下次更新时什么情况会让它们被移出名单
+- 交易前用户还需要复核什么
 
-## Caution
+## 注意事项
 
-- Do not imply that policy support guarantees performance.
-- Distinguish `policy direction` from `short-term speculative trading style`.
-- If a stock is highly thematic or sentiment-driven, label it as such.
+- 不要暗示政策支持就一定带来股价表现。
+- 要区分“政策主线”和“短线资金炒作风格”。
+- 如果某只股票主题属性特别强、容易受情绪驱动，要明确标出来。
