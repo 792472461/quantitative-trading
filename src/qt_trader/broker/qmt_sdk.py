@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from qt_trader.broker.terminal_client import TerminalClient
-from qt_trader.models import AccountInfo, OrderInfo, PositionInfo
+from qt_trader.models import AccountInfo, Order, OrderInfo, OrderSide, PositionInfo, TradeInfo
 
 
 class QMTQueryAdapter(Protocol):
@@ -20,11 +20,18 @@ class QMTQueryAdapter(Protocol):
     def get_orders(self) -> list[OrderInfo]:
         ...
 
+    def place_order(self, order: Order, price_type: str = "latest") -> OrderInfo:
+        ...
+
+    def get_trades(self) -> list[TradeInfo]:
+        ...
+
 
 @dataclass(slots=True)
 class QMTSdkBundle:
     XtQuantTrader: type
     StockAccount: type
+    xtconstant: Any | None = None
 
 
 @dataclass(slots=True)
@@ -52,6 +59,12 @@ class QMTSdkClient(TerminalClient):
     def get_orders(self) -> list[OrderInfo]:
         return self.adapter.get_orders()
 
+    def place_order(self, order: Order, price_type: str = "latest") -> OrderInfo:
+        return self.adapter.place_order(order, price_type=price_type)
+
+    def get_trades(self) -> list[TradeInfo]:
+        return self.adapter.get_trades()
+
     def _build_adapter(self) -> QMTQueryAdapter:
         bundle = self.sdk_bundle or self._load_sdk_bundle()
         userdata_path = self._resolve_userdata_path()
@@ -73,6 +86,10 @@ class QMTSdkClient(TerminalClient):
                 f"QMT SDK module '{self.sdk_module}' is not installed. "
                 "Install the broker SDK or switch broker.terminal_client_mode back to 'mock'."
             ) from exc
+        try:
+            xtconstant_module = importlib.import_module(f"{self.sdk_module}.xtconstant")
+        except ModuleNotFoundError:
+            xtconstant_module = None
 
         if not hasattr(xttrader_module, "XtQuantTrader") or not hasattr(xttype_module, "StockAccount"):
             raise RuntimeError(
@@ -82,6 +99,7 @@ class QMTSdkClient(TerminalClient):
         return QMTSdkBundle(
             XtQuantTrader=xttrader_module.XtQuantTrader,
             StockAccount=xttype_module.StockAccount,
+            xtconstant=xtconstant_module,
         )
 
     def _resolve_userdata_path(self) -> Path:
@@ -112,6 +130,7 @@ class XtQuantTraderQueryAdapter(QMTQueryAdapter):
     def __post_init__(self) -> None:
         self.account = self.sdk_bundle.StockAccount(self.account_id)
         self.trader = self.sdk_bundle.XtQuantTrader(str(self.userdata_path), self.session_id)
+        self.xtconstant = self.sdk_bundle.xtconstant
         self.trader.start()
         connect_result = self.trader.connect()
         if connect_result != 0:
@@ -165,10 +184,100 @@ class XtQuantTraderQueryAdapter(QMTQueryAdapter):
                     price=_optional_float_attr(item, "price", "price_value", "order_price"),
                     status=_normalize_order_status(_raw_attr(item, "order_status", "status", "status_msg")),
                     timestamp=_normalize_timestamp(_raw_attr(item, "order_time", "timestamp", "traded_time")),
+                    broker_order_id=_str_attr(item, "order_id", "entrust_no", "order_sysid", default=""),
                     reason=_str_attr(item, "order_remark", "remark", "reason", default=""),
                 )
             )
         return orders
+
+    def get_trades(self) -> list[TradeInfo]:
+        if not hasattr(self.trader, "query_stock_trades"):
+            return []
+        items = self.trader.query_stock_trades(self.account) or []
+        trades: list[TradeInfo] = []
+        for item in items:
+            trades.append(
+                TradeInfo(
+                    symbol=_str_attr(item, "stock_code", "symbol", "code", default=""),
+                    side=_normalize_order_side(_raw_attr(item, "order_type", "side", "direction")),
+                    quantity=_int_attr(item, "traded_volume", "volume", "quantity", default=0),
+                    price=_float_attr(item, "traded_price", "price", "deal_price", default=0.0),
+                    timestamp=_normalize_timestamp(_raw_attr(item, "traded_time", "timestamp", "trade_time")),
+                    broker_order_id=_str_attr(item, "order_id", "entrust_no", "order_sysid", default=""),
+                    trade_id=_str_attr(item, "trade_id", "deal_id", "business_id", default=""),
+                    reason=_str_attr(item, "remark", "reason", default=""),
+                )
+            )
+        return trades
+
+    def place_order(self, order: Order, price_type: str = "latest") -> OrderInfo:
+        order_type = self._resolve_order_type(order.side)
+        resolved_price_type = self._resolve_price_type(price_type)
+        submit_price = order.price if order.price is not None else 0.0
+
+        if hasattr(self.trader, "order_stock_async"):
+            order_id = self.trader.order_stock_async(
+                self.account,
+                order.symbol,
+                order_type,
+                int(order.quantity),
+                resolved_price_type,
+                float(submit_price),
+                "qt_trader",
+                order.reason or "qt_trader_live",
+            )
+        elif hasattr(self.trader, "order_stock"):
+            order_id = self.trader.order_stock(
+                self.account,
+                order.symbol,
+                order_type,
+                int(order.quantity),
+                resolved_price_type,
+                float(submit_price),
+                "qt_trader",
+                order.reason or "qt_trader_live",
+            )
+        else:
+            raise RuntimeError("QMT trader does not expose order_stock or order_stock_async")
+
+        if order_id in {None, -1, 0}:
+            raise RuntimeError(f"QMT order submission failed, order_id={order_id}")
+
+        return OrderInfo(
+            symbol=order.symbol,
+            side=order.side.value,
+            quantity=order.quantity,
+            price=order.price,
+            status="SUBMITTED",
+            timestamp=order.timestamp,
+            broker_order_id=str(order_id),
+            reason=order.reason,
+        )
+
+    def _resolve_order_type(self, side: OrderSide) -> int:
+        if self.xtconstant is None:
+            raise RuntimeError("QMT xtconstant module is required for live order submission")
+        if side == OrderSide.BUY:
+            return int(getattr(self.xtconstant, "STOCK_BUY"))
+        return int(getattr(self.xtconstant, "STOCK_SELL"))
+
+    def _resolve_price_type(self, price_type: str) -> int:
+        if self.xtconstant is None:
+            raise RuntimeError("QMT xtconstant module is required for live order submission")
+        normalized = price_type.strip().lower()
+        if normalized == "latest":
+            candidate = getattr(self.xtconstant, "LATEST_PRICE", None)
+            if candidate is None:
+                candidate = getattr(self.xtconstant, "MARKET_PEER_PRICE_FIRST", None)
+            if candidate is None:
+                raise RuntimeError("QMT xtconstant does not expose a latest/market price type")
+            return int(candidate)
+        if normalized == "limit":
+            candidate = getattr(self.xtconstant, "FIX_PRICE", None)
+            if candidate is None:
+                raise RuntimeError("QMT xtconstant does not expose FIX_PRICE")
+            return int(candidate)
+        raise RuntimeError(f"Unsupported QMT live order price type: {price_type}")
 
 
 def _raw_attr(obj: Any, *names: str) -> Any:

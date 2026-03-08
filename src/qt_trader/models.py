@@ -12,6 +12,9 @@ class OrderSide(str, Enum):
 
 class OrderStatus(str, Enum):
     NEW = "NEW"
+    SUBMITTED = "SUBMITTED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    CANCELED = "CANCELED"
     REJECTED = "REJECTED"
     FILLED = "FILLED"
 
@@ -43,6 +46,7 @@ class Order:
     timestamp: datetime
     price: float | None = None
     status: OrderStatus = OrderStatus.NEW
+    broker_order_id: str = ""
     reason: str = ""
 
 
@@ -53,6 +57,7 @@ class Fill:
     quantity: int
     price: float
     timestamp: datetime
+    broker_order_id: str = ""
     commission: float = 0.0
     stamp_duty: float = 0.0
     slippage_cost: float = 0.0
@@ -114,4 +119,17 @@ class OrderInfo:
     price: float | None
     status: str
     timestamp: datetime
+    broker_order_id: str = ""
+    reason: str = ""
+
+
+@dataclass(slots=True)
+class TradeInfo:
+    symbol: str
+    side: str
+    quantity: int
+    price: float
+    timestamp: datetime
+    broker_order_id: str = ""
+    trade_id: str = ""
     reason: str = ""

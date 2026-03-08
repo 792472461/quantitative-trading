@@ -23,9 +23,11 @@ from qt_trader.cli_render import (
     console,
     format_delta,
     render_backtest_metrics,
+    render_live_trade_result,
     render_market_regime_metrics,
     render_post_close_summary,
     render_pre_market_review,
+    render_reconciliation_summary,
     render_signal_watch_result,
     render_summary,
 )
@@ -42,7 +44,7 @@ from qt_trader.market import TradingCalendar
 from qt_trader.portfolio import Portfolio
 from qt_trader.readiness import run_preflight_checks
 from qt_trader.research import optimize_moving_average_parameters
-from qt_trader.runtime import PaperTradingRuntime, SignalWatchingRuntime
+from qt_trader.runtime import LiveTradingRuntime, PaperTradingRuntime, SignalWatchingRuntime
 from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 
@@ -103,13 +105,7 @@ def paper_trade(config: Path = typer.Option(..., exists=True, readable=True, hel
                 strategy=build_strategy(app_config),
                 broker=broker,
                 portfolio=portfolio,
-                risk_manager=RiskManager(
-                    max_position_pct=app_config.backtest.max_position_pct,
-                    max_drawdown_pct=app_config.backtest.max_drawdown_pct,
-                    max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
-                    max_positions=app_config.backtest.max_positions,
-                    max_symbol_quantity=app_config.backtest.max_symbol_quantity,
-                ),
+                risk_manager=build_risk_manager(app_config),
                 storage=storage,
                 persist_snapshots=app_config.runtime.persist_snapshots,
                 sleep_seconds=0.0,
@@ -187,6 +183,125 @@ def signal_watch(
     except RuntimeLockError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def live_trade(
+    config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config."),
+    iterations: int = typer.Option(1, min=0, help="Number of live cycles. Use 0 to keep running."),
+    force: bool = typer.Option(False, help="Run even if market is currently closed."),
+) -> None:
+    app_config = load_config(config)
+    storage, logger, alert_notifier, state_store = build_runtime_dependencies(app_config)
+    scheduler = SessionScheduler(TradingCalendar(app_config.market))
+    signal_state_store = SignalWatchStateStore(app_config.runtime.signal_state_path)
+
+    if app_config.broker.provider.lower() != "guojin_qmt_live":
+        console.print("[red]live-trade requires broker.provider=guojin_qmt_live.[/red]")
+        raise typer.Exit(code=1)
+    if not app_config.broker.allow_live_trading:
+        console.print("[red]live trading is disabled. Set broker.allow_live_trading=true after validation.[/red]")
+        raise typer.Exit(code=1)
+
+    cycle = 0
+    try:
+        broker = create_broker(app_config)
+    except BrokerConfigurationError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    # Live trading starts from the broker's actual state, not from any locally inferred position snapshot.
+    initial_synced_at = datetime.now().isoformat()
+    storage.save_broker_sync_bundle(
+        broker.get_account_info(),
+        broker.get_positions(),
+        broker.get_orders(),
+        broker.get_trades(),
+        initial_synced_at,
+    )
+    initial_sync_result = storage.sync_local_orders_with_broker(
+        broker_orders=broker.get_orders(),
+        broker_trades=broker.get_trades(),
+    )
+    render_reconciliation_summary(
+        storage.reconcile_orders_with_broker(
+            account_id=broker.get_account_info().account_id,
+            broker_orders=broker.get_orders(),
+            broker_trades=broker.get_trades(),
+        )
+    )
+    if initial_sync_result["updated_orders"] or initial_sync_result["inserted_fills"]:
+        console.print(
+            "Live startup sync applied: "
+            f"updated_orders={initial_sync_result['updated_orders']} "
+            f"inserted_fills={initial_sync_result['inserted_fills']}"
+        )
+
+    try:
+        with RuntimeLock(app_config.runtime.lock_path):
+            while iterations == 0 or cycle < iterations:
+                cycle += 1
+                if not force and not scheduler.should_run_now():
+                    console.print(f"[yellow]Live trade waiting: {scheduler.describe()}[/yellow]")
+                    if iterations != 0 and cycle >= iterations:
+                        break
+                    time.sleep(app_config.runtime.polling_interval_seconds)
+                    continue
+
+                # Live trading must regenerate bars every cycle to consume the latest QMT market data.
+                bars = create_data_feed(app_config).load()
+                try:
+                    runtime = LiveTradingRuntime(
+                        strategy=build_strategy(app_config),
+                        broker=broker,
+                        risk_manager=build_risk_manager(app_config),
+                        storage=storage,
+                        logger=logger,
+                        alert_notifier=alert_notifier,
+                        signal_state_store=signal_state_store,
+                        state_store=state_store,
+                        sync_broker_after_order=app_config.runtime.broker_sync_after_order,
+                    )
+                    result = runtime.execute(bars)
+                except Exception as exc:  # noqa: BLE001
+                    console.print(f"[red]Live trade failed: {exc}[/red]")
+                    raise typer.Exit(code=1) from exc
+
+                render_live_trade_result(result)
+                if iterations != 0 and cycle >= iterations:
+                    break
+                time.sleep(app_config.runtime.polling_interval_seconds)
+    except RuntimeLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def reconcile_broker(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    broker = create_broker(app_config)
+    synced_at = datetime.now().isoformat()
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+    trades = broker.get_trades()
+
+    storage.save_broker_sync_bundle(account, positions, orders, trades, synced_at)
+    sync_result = storage.sync_local_orders_with_broker(
+        broker_orders=orders,
+        broker_trades=trades,
+    )
+    render_reconciliation_summary(
+        storage.reconcile_orders_with_broker(
+            account_id=account.account_id,
+            broker_orders=orders,
+            broker_trades=trades,
+        )
+    )
+    console.print(
+        f"Broker sync applied: updated_orders={sync_result['updated_orders']} inserted_fills={sync_result['inserted_fills']}"
+    )
 
 
 @app.command()
@@ -364,13 +479,7 @@ def run_session(
                         strategy=build_strategy(app_config),
                         broker=broker,
                         portfolio=portfolio,
-                        risk_manager=RiskManager(
-                            max_position_pct=app_config.backtest.max_position_pct,
-                            max_drawdown_pct=app_config.backtest.max_drawdown_pct,
-                            max_total_exposure_pct=app_config.backtest.max_total_exposure_pct,
-                            max_positions=app_config.backtest.max_positions,
-                            max_symbol_quantity=app_config.backtest.max_symbol_quantity,
-                        ),
+                        risk_manager=build_risk_manager(app_config),
                         storage=storage,
                         persist_snapshots=app_config.runtime.persist_snapshots,
                         sleep_seconds=0.0,

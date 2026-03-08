@@ -23,6 +23,8 @@
 - terminal client 抽象
 - QMT SDK client scaffold
 - xtquant 查询 adapter 骨架
+- QMT 实时行情数据源
+- QMT live order 提交运行时
 - 回测引擎
 - Paper trading 运行时
 - 风控
@@ -47,7 +49,7 @@
 - `src/qt_trader/backtest.py`
   负责历史回测
 - `src/qt_trader/runtime.py`
-  负责 paper trading 运行时
+  负责 paper trading、signal watch 和 live trading 运行时
 - `src/qt_trader/broker/`
   负责券商网关与执行抽象
 - `src/qt_trader/costs.py`
@@ -82,6 +84,9 @@
 - `python -m qt_trader.cli backtest --config config/market_regime.yaml`
 - `python -m qt_trader.cli signal-watch --config config/example.yaml --iterations 1 --force`
 - `python -m qt_trader.cli daily-workflow --config config/example.yaml --iterations 1 --at 2026-03-06T09:10:00`
+- `python -m qt_trader.cli preflight-check --config config/guojin_qmt_live.yaml`
+- `python -m qt_trader.cli reconcile-broker --config config/guojin_qmt_live.yaml`
+- `python -m qt_trader.cli live-trade --config config/guojin_qmt_live.yaml --iterations 1 --force`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
 - 回测分析会附带输出 Sharpe、Calmar、Expectancy
 - `broker-sync` 会输出相对上一版快照的资金、持仓、委托数量变化
@@ -91,6 +96,9 @@
 - `preflight-check` 会检查策略参数、数据加载、路径可写性、告警与 broker 就绪状态
 - `signal-watch` 会持续扫描最新行情，只发出买卖信号提醒，不会真实下单
 - `daily-workflow` 会按交易阶段运行：9:00-9:30 做盘前复核和参数评估，15:00 后统计当日收益，其余阶段保持空转
+- `live-trade` 只在显式开启 `broker.allow_live_trading=true` 后提交真实订单，不会复用 paper runtime 的本地伪成交逻辑
+- `reconcile-broker` 会将 broker 账户、持仓、委托、成交快照落库，并输出本地与券商的订单差异摘要
+- broker 同步过程会按 `broker_order_id` 回补本地订单状态，并将成交幂等落库到 `fills`
 
 ## Iteration Log
 
@@ -228,6 +236,16 @@
 - 增加只提醒买卖信号的 `signal-watch` 常驻扫描命令
 - 增加按交易阶段执行的 `daily-workflow` 命令
 - 后续每次迭代完成后同步更新本文档
+
+### 2026-03-08 - Current Iteration
+
+- 增加 `qmt_live` 数据源，通过 `xtquant.xtdata` 获取 QMT 实时/准实时 bar
+- 增加 `guojin_qmt_live` broker provider，显式区分只读查询和真实下单路径
+- 增加 `live-trade` CLI 命令，走信号、风控、发单、broker 同步链路
+- 增加 `broker_order_id`、broker 成交查询与 `reconcile-broker` 命令，补实盘前订单/成交对账基础
+- 增加本地订单状态回补逻辑，支持 `PARTIALLY_FILLED` / `FILLED` 等状态随 broker 同步自动更新
+- 保持 `paper-trade` 与 live trading 分离，避免把真实订单伪造成即时成交
+- 增加 QMT live 配置样例与回归测试
 
 ## Next Priorities
 

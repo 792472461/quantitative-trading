@@ -54,3 +54,6 @@ class LocalTerminalReadOnlyBroker(BrokerGateway):
 
     def get_orders(self):
         return self.client.get_orders()
+
+    def get_trades(self):
+        return self.client.get_trades()

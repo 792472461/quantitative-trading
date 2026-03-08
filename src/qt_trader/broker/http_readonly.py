@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from qt_trader.broker.base import BrokerGateway
-from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo
+from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo, TradeInfo
 
 
 class HTTPSessionProtocol(Protocol):
@@ -84,10 +84,14 @@ class HTTPReadOnlyBroker(BrokerGateway):
                 price=None if item.get("price") is None else float(item["price"]),
                 status=str(item["status"]),
                 timestamp=datetime.fromisoformat(str(item["timestamp"])),
+                broker_order_id=str(item.get("broker_order_id", "")),
                 reason=str(item.get("reason", "")),
             )
             for item in items
         ]
+
+    def get_trades(self) -> list[TradeInfo]:
+        return []
 
     def _get_json(self, endpoint: str) -> dict[str, Any] | list[dict[str, Any]]:
         response = self.session.get(

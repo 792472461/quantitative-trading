@@ -1,0 +1,70 @@
+environment: live
+data:
+  provider: qmt_live
+  symbol: 600519.SH
+  symbols: [600519.SH, 000300.SH]
+  period: 1m
+  bar_window: 240
+  xtquant_module: xtquant
+  subscribe_live_quotes: true
+backtest:
+  initial_cash: 200000
+  commission_rate: 0.0003
+  min_commission: 5.0
+  stamp_duty_rate: 0.001
+  slippage_bps: 5.0
+  max_position_pct: 0.2
+  max_total_exposure_pct: 0.8
+  max_positions: 5
+  max_symbol_quantity: 1000
+  max_drawdown_pct: 0.15
+strategy:
+  name: moving_average_cross
+  fast_window: 5
+  slow_window: 20
+  trade_size: 100
+  market_filter_enabled: true
+  benchmark_symbol: 000300.SH
+  market_fast_window: 5
+  market_slow_window: 20
+broker:
+  provider: guojin_qmt_live
+  read_only: false
+  allow_live_trading: false
+  account_id_env: BROKER_ACCOUNT_ID
+  terminal_type: qmt
+  terminal_client_mode: qmt_sdk
+  sdk_module: xtquant
+  qmt_session_id: 1
+  terminal_path: C:/Broker/Guojin/QMT
+  terminal_userdata_path: C:/Broker/Guojin/QMT/userdata_mini
+  executable_name: XtMiniQmt.exe
+  default_price_type: latest
+storage:
+  sqlite_path: trading.db
+runtime:
+  polling_interval_seconds: 3.0
+  persist_snapshots: false
+  max_retries: 1
+  broker_sync_after_order: true
+  lock_path: runtime.lock
+  state_path: runtime_state.json
+  signal_state_path: signal_watch_state.json
+logging:
+  level: INFO
+  jsonl_path: logs/runtime.jsonl
+alert:
+  enabled: true
+  channels: [stdout, file]
+  max_drawdown_pct: 0.03
+  rejected_order_threshold: 1
+market:
+  timezone: Asia/Shanghai
+  weekdays: [0, 1, 2, 3, 4]
+  morning_start: "09:30"
+  morning_end: "11:30"
+  afternoon_start: "13:00"
+  afternoon_end: "15:00"
+  holidays: []
+  makeup_workdays: []
+  holiday_files: [config/calendar_ashare_2026.json]

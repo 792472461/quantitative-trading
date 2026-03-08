@@ -6,6 +6,7 @@ from qt_trader.broker.base import BrokerGateway
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.paper import PaperBroker
+from qt_trader.broker.qmt_live import GuojinQMTLiveBroker
 from qt_trader.broker.qmt_sdk import QMTSdkClient
 from qt_trader.broker.readonly import ReadOnlyBroker
 from qt_trader.config import AppConfig
@@ -106,7 +107,7 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
             timeout_seconds=config.broker.timeout_seconds,
         )
 
-    if provider in {"guojin_qmt", "guojin_ptrade"}:
+    if provider in {"guojin_qmt", "guojin_ptrade", "guojin_qmt_live"}:
         missing = [env_name for env_name in (config.broker.account_id_env,) if not os.getenv(env_name)]
         if missing:
             raise BrokerConfigurationError(
@@ -117,7 +118,7 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
                 f"Broker provider '{config.broker.provider}' requires broker.terminal_path"
             )
         client_mode = config.broker.terminal_client_mode.lower()
-        if provider == "guojin_qmt" and client_mode == "qmt_sdk":
+        if provider in {"guojin_qmt", "guojin_qmt_live"} and client_mode == "qmt_sdk":
             try:
                 client = QMTSdkClient(
                     broker_name="guojin_qmt",
@@ -132,11 +133,23 @@ def create_broker(config: AppConfig, portfolio: Portfolio | None = None) -> Brok
                 )
             except RuntimeError as exc:
                 raise BrokerConfigurationError(str(exc)) from exc
+            if provider == "guojin_qmt_live":
+                return GuojinQMTLiveBroker(
+                    account_id=os.getenv(config.broker.account_id_env, "guojin-qmt-account"),
+                    terminal_path=config.broker.terminal_path,
+                    client=client,
+                    default_price_type=config.broker.default_price_type,
+                    allow_live_trading=config.broker.allow_live_trading,
+                )
             return GuojinQMTBroker(
                 account_id=os.getenv(config.broker.account_id_env, "guojin-qmt-account"),
                 terminal_path=config.broker.terminal_path,
                 executable_name=config.broker.executable_name or "XtMiniQmt.exe",
                 client=client,
+            )
+        if provider == "guojin_qmt_live":
+            raise BrokerConfigurationError(
+                "Broker provider 'guojin_qmt_live' requires broker.terminal_client_mode='qmt_sdk'."
             )
         if config.broker.terminal_state_file is None:
             raise BrokerConfigurationError(

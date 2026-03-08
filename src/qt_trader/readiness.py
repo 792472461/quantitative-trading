@@ -97,7 +97,7 @@ def _check_broker_configuration(config: AppConfig) -> PreflightCheck:
     if provider == "paper":
         return PreflightCheck("broker", "WARN", "provider=paper, safe for rehearsal but not live-ready")
 
-    if provider in {"guojin_qmt", "guojin_ptrade"}:
+    if provider in {"guojin_qmt", "guojin_ptrade", "guojin_qmt_live"}:
         if not os.getenv(config.broker.account_id_env):
             return PreflightCheck("broker", "FAIL", f"missing env vars: {config.broker.account_id_env}")
         if config.broker.terminal_path is None:
@@ -110,7 +110,7 @@ def _check_broker_configuration(config: AppConfig) -> PreflightCheck:
             if not executable_path.exists():
                 return PreflightCheck("broker", "WARN", f"terminal executable not found: {executable_path}")
         client_mode = config.broker.terminal_client_mode.lower()
-        if provider == "guojin_qmt" and client_mode == "qmt_sdk":
+        if provider in {"guojin_qmt", "guojin_qmt_live"} and client_mode == "qmt_sdk":
             userdata_path = (
                 Path(config.broker.terminal_userdata_path)
                 if config.broker.terminal_userdata_path is not None
@@ -123,10 +123,19 @@ def _check_broker_configuration(config: AppConfig) -> PreflightCheck:
                 importlib.import_module(sdk_module)
             except ModuleNotFoundError:
                 return PreflightCheck("broker", "FAIL", f"qmt sdk module not installed: {sdk_module}")
+            if provider == "guojin_qmt_live" and not config.broker.allow_live_trading:
+                return PreflightCheck(
+                    "broker",
+                    "WARN",
+                    f"provider={config.broker.provider} sdk ready but live trading switch is disabled",
+                )
             return PreflightCheck(
                 "broker",
-                "WARN",
-                f"provider={config.broker.provider} sdk module ready ({sdk_module}), query adapter pending",
+                "PASS" if provider == "guojin_qmt_live" else "WARN",
+                (
+                    f"provider={config.broker.provider} sdk module ready ({sdk_module}), "
+                    f"{'live order path enabled' if provider == 'guojin_qmt_live' else 'query path ready'}"
+                ),
             )
         if config.broker.terminal_state_file is None:
             return PreflightCheck("broker", "FAIL", "terminal broker requires broker.terminal_state_file")

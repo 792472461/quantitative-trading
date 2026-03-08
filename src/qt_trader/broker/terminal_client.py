@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from qt_trader.models import AccountInfo, OrderInfo, PositionInfo
+from qt_trader.models import AccountInfo, OrderInfo, PositionInfo, TradeInfo
 
 
 class TerminalClient(Protocol):
@@ -17,6 +17,9 @@ class TerminalClient(Protocol):
         ...
 
     def get_orders(self) -> list[OrderInfo]:
+        ...
+
+    def get_trades(self) -> list[TradeInfo]:
         ...
 
 
@@ -62,12 +65,29 @@ class MockTerminalClient:
                 price=None if item.get("price") is None else float(item["price"]),
                 status=str(item["status"]),
                 timestamp=datetime.fromisoformat(str(item["timestamp"])),
+                broker_order_id=str(item.get("broker_order_id", "")),
                 reason=str(item.get("reason", "")),
             )
             for item in payload.get("orders", [])
         ]
 
+    def get_trades(self) -> list[TradeInfo]:
+        payload = self._load_state()
+        return [
+            TradeInfo(
+                symbol=str(item["symbol"]),
+                side=str(item["side"]),
+                quantity=int(item["quantity"]),
+                price=float(item["price"]),
+                timestamp=datetime.fromisoformat(str(item["timestamp"])),
+                broker_order_id=str(item.get("broker_order_id", "")),
+                trade_id=str(item.get("trade_id", "")),
+                reason=str(item.get("reason", "")),
+            )
+            for item in payload.get("trades", [])
+        ]
+
     def _load_state(self) -> dict:
         if not self.state_file.exists():
-            return {"account": {}, "positions": [], "orders": []}
+            return {"account": {}, "positions": [], "orders": [], "trades": []}
         return json.loads(self.state_file.read_text(encoding="utf-8"))

@@ -21,7 +21,7 @@ class BacktestConfig(BaseModel):
 
 class DataConfig(BaseModel):
     provider: str = "csv"
-    csv_path: Path
+    csv_path: Path | None = None
     csv_paths: dict[str, Path] | None = None
     symbol: str
     symbols: list[str] | None = None
@@ -32,6 +32,9 @@ class DataConfig(BaseModel):
     end_date: str | None = None
     adjust: str = ""
     output_csv_path: Path | None = None
+    bar_window: int = Field(default=240, gt=0)
+    xtquant_module: str = "xtquant"
+    subscribe_live_quotes: bool = True
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -62,6 +65,7 @@ class StrategyConfig(BaseModel):
 class BrokerConfig(BaseModel):
     provider: str = "paper"
     read_only: bool = False
+    allow_live_trading: bool = False
     api_key_env: str = "BROKER_API_KEY"
     api_secret_env: str = "BROKER_API_SECRET"
     account_id_env: str = "BROKER_ACCOUNT_ID"
@@ -74,6 +78,7 @@ class BrokerConfig(BaseModel):
     sdk_module: str | None = None
     qmt_session_id: int = Field(default=1, ge=1)
     terminal_state_file: Path | None = None
+    default_price_type: str = "latest"
     state_file: Path = Path("config/broker_readonly_state.json")
     account_endpoint: str = "/account"
     positions_endpoint: str = "/positions"
@@ -89,6 +94,7 @@ class RuntimeConfig(BaseModel):
     polling_interval_seconds: float = Field(default=1.0, gt=0)
     persist_snapshots: bool = True
     max_retries: int = Field(default=2, ge=0)
+    broker_sync_after_order: bool = True
     lock_path: Path = Path("runtime.lock")
     state_path: Path = Path("runtime_state.json")
     signal_state_path: Path = Path("signal_watch_state.json")

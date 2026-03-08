@@ -10,6 +10,7 @@ import pandas as pd
 from qt_trader.alerts import AlertNotifier
 from qt_trader.analytics import analyze_backtest, analyze_market_regimes
 from qt_trader.backtest import BacktestEngine
+from qt_trader.broker.qmt_live import GuojinQMTLiveBroker
 from qt_trader.broker.guojin import GuojinHTTPReadOnlyBroker, GuojinPtradeBroker, GuojinQMTBroker
 from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.qmt_sdk import QMTSdkBundle, QMTSdkClient
@@ -28,12 +29,12 @@ from qt_trader.guardian import (
 )
 from qt_trader.logging_utils import JsonLogger
 from qt_trader.market import TradingCalendar
-from qt_trader.models import AccountInfo, Bar, Order, OrderInfo, OrderSide, Position, PositionInfo
+from qt_trader.models import AccountInfo, Bar, Order, OrderInfo, OrderSide, OrderStatus, Position, PositionInfo, TradeInfo
 from qt_trader.portfolio import Portfolio
 from qt_trader.readiness import run_preflight_checks
 from qt_trader.research import optimize_moving_average_parameters
 from qt_trader.risk import RiskManager
-from qt_trader.runtime import PaperTradingRuntime, SignalWatchingRuntime
+from qt_trader.runtime import LiveTradingRuntime, PaperTradingRuntime, SignalWatchingRuntime
 from qt_trader.scheduler import SessionScheduler
 from qt_trader.storage import SQLiteStorage
 from qt_trader.strategy.moving_average import MovingAverageCrossStrategy
@@ -1160,3 +1161,440 @@ def test_signal_watch_alerts_latest_signal_once_and_deduplicates(tmp_path: Path)
     assert signal_state_store.load().last_status == "completed"
     recent_events = storage.recent_events(limit=5)
     assert any(row["event_type"] == "signal_alerted" for row in recent_events)
+
+
+def test_qmt_live_data_feed_normalizes_sdk_frames() -> None:
+    fake_package = types.ModuleType("fake_xtquant_live")
+    fake_xtdata = types.ModuleType("fake_xtquant_live.xtdata")
+
+    def fake_subscribe_quote(*args, **kwargs):
+        return 1
+
+    def fake_get_market_data_ex(field_list, stock_list, period, count):
+        del field_list, period, count
+        return {
+            stock_list[0]: pd.DataFrame(
+                {
+                    "time": ["20260309093000", "20260309093100"],
+                    "open": [10.0, 10.1],
+                    "high": [10.2, 10.3],
+                    "low": [9.9, 10.0],
+                    "close": [10.1, 10.2],
+                    "volume": [1000, 1200],
+                }
+            )
+        }
+
+    fake_xtdata.subscribe_quote = fake_subscribe_quote
+    fake_xtdata.get_market_data_ex = fake_get_market_data_ex
+    sys.modules["fake_xtquant_live"] = fake_package
+    sys.modules["fake_xtquant_live.xtdata"] = fake_xtdata
+
+    try:
+        config = load_config(Path("config/guojin_qmt_live.yaml"))
+        config.data.xtquant_module = "fake_xtquant_live"
+        bars = create_data_feed(config).load()
+    finally:
+        sys.modules.pop("fake_xtquant_live.xtdata", None)
+        sys.modules.pop("fake_xtquant_live", None)
+
+    assert len(bars) == 2
+    assert bars[-1].symbol == "600519.SH"
+    assert bars[-1].close == 10.2
+
+
+def test_qmt_live_broker_places_order_with_sdk_client() -> None:
+    class FakeLiveClient:
+        def place_order(self, order: Order, price_type: str = "latest") -> OrderInfo:
+            return OrderInfo(
+                symbol=order.symbol,
+                side=order.side.value,
+                quantity=order.quantity,
+                price=order.price,
+                status="SUBMITTED",
+                timestamp=order.timestamp,
+                broker_order_id="live-order-001",
+                reason=f"price_type={price_type}",
+            )
+
+        def get_account_info(self) -> AccountInfo:
+            return AccountInfo("acct-001", "guojin_qmt", 100000.0, 100000.0, 100000.0, "qmt_live")
+
+        def get_positions(self) -> list[PositionInfo]:
+            return []
+
+        def get_orders(self) -> list[OrderInfo]:
+            return []
+
+        def get_trades(self) -> list[TradeInfo]:
+            return []
+
+    broker = GuojinQMTLiveBroker(
+        account_id="acct-001",
+        terminal_path="C:/Broker/Guojin/QMT",
+        client=FakeLiveClient(),  # type: ignore[arg-type]
+        allow_live_trading=True,
+    )
+    order = Order(
+        symbol="600519.SH",
+        side=OrderSide.BUY,
+        quantity=100,
+        timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+        price=1500.0,
+        reason="unit_test",
+    )
+
+    result = broker.place_order(order, market_price=1500.0)
+
+    assert result.status == "SUBMITTED"
+    assert result.broker_order_id == "live-order-001"
+    assert result.reason == "price_type=latest"
+
+
+def test_live_trading_runtime_submits_latest_signal_once(tmp_path: Path) -> None:
+    class FakeLiveBroker:
+        def __init__(self) -> None:
+            self.placed: list[Order] = []
+
+        def place_order(self, order: Order, market_price: float) -> OrderInfo:
+            self.placed.append(order)
+            return OrderInfo(
+                symbol=order.symbol,
+                side=order.side.value,
+                quantity=order.quantity,
+                price=market_price,
+                status="SUBMITTED",
+                timestamp=order.timestamp,
+                broker_order_id="live-order-001",
+                reason="submitted",
+            )
+
+        def get_account_info(self) -> AccountInfo:
+            return AccountInfo("acct-001", "guojin_qmt_live", 100000.0, 100000.0, 100000.0, "qmt_live")
+
+        def get_positions(self) -> list[PositionInfo]:
+            return []
+
+        def get_orders(self) -> list[OrderInfo]:
+            return []
+
+        def get_trades(self) -> list[TradeInfo]:
+            return []
+
+    bars = [
+        Bar("600519.SH", datetime.fromisoformat("2026-03-02T09:30:00"), 10, 10, 10, 10, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-03T09:30:00"), 11, 11, 11, 11, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-04T09:30:00"), 12, 12, 12, 12, 1000),
+    ]
+    storage = SQLiteStorage(tmp_path / "live_trade.db")
+    logger = JsonLogger(tmp_path / "live_trade.jsonl")
+    signal_state_store = SignalWatchStateStore(tmp_path / "live_trade_signal_state.json")
+    runtime = LiveTradingRuntime(
+        strategy=MovingAverageCrossStrategy(
+            symbols=["600519.SH"],
+            fast_window=2,
+            slow_window=3,
+            trade_size=10,
+        ),
+        broker=FakeLiveBroker(),  # type: ignore[arg-type]
+        risk_manager=RiskManager(
+            max_position_pct=0.5,
+            max_drawdown_pct=0.5,
+            max_total_exposure_pct=1.0,
+            max_positions=5,
+            max_symbol_quantity=1000,
+        ),
+        storage=storage,
+        logger=logger,
+        signal_state_store=signal_state_store,
+        sync_broker_after_order=False,
+    )
+
+    result = runtime.execute(bars)
+
+    assert len(result.submitted_orders) == 1
+    assert result.submitted_orders[0].status == "SUBMITTED"
+    assert result.submitted_orders[0].broker_order_id == "live-order-001"
+    recent_events = storage.recent_events(limit=5)
+    assert any(row["event_type"] == "live_order_submitted" for row in recent_events)
+
+
+def test_storage_reconciliation_summary_detects_missing_and_unmatched_orders(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "reconcile.db")
+    storage.save_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.BUY,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+            price=1500.0,
+            status=OrderStatus.SUBMITTED,
+            broker_order_id="",
+            reason="live",
+        )
+    )
+    storage.save_order(
+        Order(
+            symbol="000001.SZ",
+            side=OrderSide.BUY,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:32:00"),
+            price=10.0,
+            status=OrderStatus.SUBMITTED,
+            broker_order_id="broker-002",
+            reason="live",
+        )
+    )
+
+    summary = storage.reconcile_orders_with_broker(
+        account_id="acct-001",
+        broker_orders=[
+            OrderInfo(
+                symbol="000001.SZ",
+                side="BUY",
+                quantity=100,
+                price=10.0,
+                status="SUBMITTED",
+                timestamp=datetime.fromisoformat("2026-03-09T09:32:00"),
+                broker_order_id="broker-002",
+                reason="",
+            ),
+            OrderInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1500.0,
+                status="SUBMITTED",
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+                broker_order_id="broker-003",
+                reason="",
+            ),
+        ],
+        broker_trades=[
+            TradeInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1500.0,
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:05"),
+                broker_order_id="broker-003",
+                trade_id="trade-001",
+                reason="",
+            )
+        ],
+    )
+
+    assert summary.local_submitted_orders == 2
+    assert summary.missing_broker_order_ids == 1
+    assert summary.unmatched_broker_orders == 1
+    assert summary.unmatched_broker_trades == 1
+
+
+def test_storage_sync_local_orders_with_broker_updates_status_and_fills(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "sync_local.db")
+    storage.save_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.BUY,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+            price=1500.0,
+            status=OrderStatus.SUBMITTED,
+            broker_order_id="broker-001",
+            reason="live",
+        )
+    )
+
+    sync_result = storage.sync_local_orders_with_broker(
+        broker_orders=[
+            OrderInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1500.0,
+                status="submitted",
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+                broker_order_id="broker-001",
+                reason="queued",
+            )
+        ],
+        broker_trades=[
+            TradeInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1499.5,
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:03"),
+                broker_order_id="broker-001",
+                trade_id="trade-001",
+                reason="filled",
+            )
+        ],
+    )
+
+    fills = storage.fills_on_date("2026-03-09")
+    summary = storage.reconcile_orders_with_broker(
+        account_id="acct-001",
+        broker_orders=[
+            OrderInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1500.0,
+                status="filled",
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+                broker_order_id="broker-001",
+                reason="",
+            )
+        ],
+        broker_trades=[
+            TradeInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1499.5,
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:03"),
+                broker_order_id="broker-001",
+                trade_id="trade-001",
+                reason="",
+            )
+        ],
+    )
+
+    assert sync_result["updated_orders"] >= 1
+    assert sync_result["inserted_fills"] == 1
+    assert len(fills) == 1
+    assert summary.unmatched_broker_orders == 0
+    assert summary.unmatched_broker_trades == 0
+
+
+def test_storage_sync_local_orders_with_broker_is_idempotent_for_same_trade(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "sync_idempotent.db")
+    storage.save_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.BUY,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+            price=1500.0,
+            status=OrderStatus.SUBMITTED,
+            broker_order_id="broker-001",
+            reason="live",
+        )
+    )
+    trades = [
+        TradeInfo(
+            symbol="600519.SH",
+            side="BUY",
+            quantity=100,
+            price=1499.5,
+            timestamp=datetime.fromisoformat("2026-03-09T09:31:03"),
+            broker_order_id="broker-001",
+            trade_id="trade-001",
+            reason="filled",
+        )
+    ]
+
+    first = storage.sync_local_orders_with_broker(broker_orders=[], broker_trades=trades)
+    second = storage.sync_local_orders_with_broker(broker_orders=[], broker_trades=trades)
+
+    fills = storage.fills_on_date("2026-03-09")
+    assert first["inserted_fills"] == 1
+    assert second["inserted_fills"] == 0
+    assert len(fills) == 1
+
+
+def test_storage_sync_local_orders_marks_partial_fill_when_trade_quantity_is_smaller(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "sync_partial.db")
+    storage.save_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.BUY,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+            price=1500.0,
+            status=OrderStatus.SUBMITTED,
+            broker_order_id="broker-001",
+            reason="live",
+        )
+    )
+
+    sync_result = storage.sync_local_orders_with_broker(
+        broker_orders=[
+            OrderInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1500.0,
+                status="submitted",
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+                broker_order_id="broker-001",
+                reason="working",
+            )
+        ],
+        broker_trades=[
+            TradeInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=40,
+                price=1499.5,
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:03"),
+                broker_order_id="broker-001",
+                trade_id="trade-001",
+                reason="partial",
+            )
+        ],
+    )
+
+    summary = storage.reconcile_orders_with_broker(
+        account_id="acct-001",
+        broker_orders=[
+            OrderInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=100,
+                price=1500.0,
+                status="submitted",
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+                broker_order_id="broker-001",
+                reason="working",
+            )
+        ],
+        broker_trades=[
+            TradeInfo(
+                symbol="600519.SH",
+                side="BUY",
+                quantity=40,
+                price=1499.5,
+                timestamp=datetime.fromisoformat("2026-03-09T09:31:03"),
+                broker_order_id="broker-001",
+                trade_id="trade-001",
+                reason="partial",
+            )
+        ],
+    )
+    with storage._connect() as conn:
+        row = conn.execute("SELECT status FROM orders WHERE broker_order_id = ?", ("broker-001",)).fetchone()
+
+    assert sync_result["inserted_fills"] == 1
+    assert row is not None
+    assert row[0] == "PARTIALLY_FILLED"
+    assert summary.local_filled_orders == 0
+
+
+def test_preflight_checks_warn_when_live_qmt_switch_is_disabled() -> None:
+    config = load_config(Path("config/guojin_qmt_live.yaml"))
+    config.broker.terminal_path = Path(".")
+    config.broker.terminal_userdata_path = Path(".")
+    config.broker.sdk_module = "json"
+    Path("XtMiniQmt.exe").write_text("", encoding="utf-8")
+    os.environ[config.broker.account_id_env] = "guojin-qmt-live-001"
+
+    try:
+        checks = run_preflight_checks(config)
+        check_map = {check.name: check for check in checks}
+
+        assert check_map["broker"].status == "WARN"
+        assert "live trading switch is disabled" in check_map["broker"].message
+    finally:
+        Path("XtMiniQmt.exe").unlink(missing_ok=True)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo
+from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo, TradeInfo
 
 
 class BrokerGateway(ABC):
@@ -20,4 +20,8 @@ class BrokerGateway(ABC):
 
     @abstractmethod
     def get_orders(self) -> list[OrderInfo]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_trades(self) -> list[TradeInfo]:
         raise NotImplementedError

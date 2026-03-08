@@ -10,6 +10,8 @@
   配置文件：[config/guojin_qmt.yaml](F:/workspace/python/quantitative-trading/config/guojin_qmt.yaml)
 - QMT SDK scaffold 配置
   配置文件：[config/guojin_qmt_sdk.yaml](F:/workspace/python/quantitative-trading/config/guojin_qmt_sdk.yaml)
+- QMT live trading 配置
+  配置文件：[config/guojin_qmt_live.yaml](F:/workspace/python/quantitative-trading/config/guojin_qmt_live.yaml)
 - Ptrade 本地终端只读骨架
   配置文件：[config/guojin_ptrade.yaml](F:/workspace/python/quantitative-trading/config/guojin_ptrade.yaml)
 - 适配器代码
@@ -34,7 +36,7 @@
 当前工程上的默认推进方式是：
 
 1. 先通过 QMT / Ptrade 本地终端只读骨架完成账户、持仓、委托查询联调
-2. 再补真实 SDK / API 调用
+2. 再补真实 SDK / API 调用和实时行情读取
 3. 最后才考虑真实下单开关
 
 当前代码已经补到这一步：
@@ -42,7 +44,10 @@
 - `mock` 模式可通过本地状态文件联调完整查询链路
 - `qmt_sdk` 模式已具备 SDK client scaffold 和 preflight 检查
 - 已增加基于 `XtQuantTrader` 查询接口的 adapter 主骨架
+- 已增加基于 `xtquant.xtdata` 的 `qmt_live` 数据源
+- 已增加 `guojin_qmt_live` provider 和 `live-trade` 运行命令
 - 仍需要在真实国金 QMT 环境中核对字段映射和返回对象细节
+- 真实成交回报、撤单、部分成交回补仍需在实机环境继续补齐
 
 ## What Is Not Yet Confirmed
 
@@ -72,14 +77,30 @@
 
 ## Safe Usage
 
-当前无论是 HTTP、QMT 还是 Ptrade 路线，都默认只允许只读查询，不允许真实下单。
+当前默认仍然以安全为先：
+
+- `guojin_qmt.yaml` 维持只读查询路径
+- `guojin_qmt_live.yaml` 默认 `broker.allow_live_trading=false`
+- 只有显式把 `broker.allow_live_trading` 改为 `true` 后，`live-trade` 才会实际提交订单
+- `live-trade` 不会复用 paper trading 的伪成交逻辑，只记录发单和 broker 同步结果
 
 使用 `config/guojin_qmt.yaml` 或 `config/guojin_ptrade.yaml` 前，需要先把 `broker.terminal_path` 改成你机器上的真实安装目录。
 
 如果你已经拿到了 QMT SDK 环境，可以改用 `config/guojin_qmt_sdk.yaml` 做环境检查；当前代码已经接上 `XtQuantTrader` 查询主链路，但仍建议先在只读查询场景下验证账户、持仓、委托字段是否和国金实际环境一致。
 
+如果你已经确认要推进真实发单联调，可按下面顺序：
+
+1. 先跑 `preflight-check --config config/guojin_qmt_live.yaml`
+2. 确认 `xtquant`、QMT 终端路径、userdata 路径、账户环境都正确
+3. 先跑 `reconcile-broker --config config/guojin_qmt_live.yaml`，确认账户、持仓、委托、成交查询口径正确
+4. 先保持 `broker.allow_live_trading=false`，只验证实时行情和查询链路
+5. 最后再显式开启 `broker.allow_live_trading=true` 做小额联调
+
 ```bash
 $env:BROKER_ACCOUNT_ID='guojin-qmt-demo-001'
 python -m qt_trader.cli broker-account --config config/guojin_qmt.yaml
 python -m qt_trader.cli preflight-check --config config/guojin_qmt.yaml
+python -m qt_trader.cli preflight-check --config config/guojin_qmt_live.yaml
+python -m qt_trader.cli reconcile-broker --config config/guojin_qmt_live.yaml
+python -m qt_trader.cli live-trade --config config/guojin_qmt_live.yaml --iterations 1 --force
 ```

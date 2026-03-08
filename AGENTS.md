@@ -3,7 +3,7 @@
 ## 项目定位
 
 这是一个面向个人长期使用的、偏生产化的量化交易项目骨架。
-它不是演示型 demo，默认应按“可持续维护的交易系统雏形”来对待，覆盖研究、回测、模拟盘、券商接入骨架、运行控制与持久化。
+默认应按“可持续维护的交易系统雏形”来对待，覆盖研究、回测、模拟盘、券商接入骨架、运行控制与持久化。
 
 ## 工作总规则
 
@@ -12,6 +12,8 @@
 - 始终维护主链路可用：配置 -> 数据源 -> 策略 -> 风控 -> broker -> runtime/storage -> 报表/监控。
 - 不要把 broker 骨架或只读接入描述成可直接实盘执行的能力。
 - 任何关键性更改，都必须在同一任务内同步更新本文件。
+- 关键性的修改，请commit代码
+- 请在关键路径代码添加注释
 
 ## 关键性更改的同步规则
 
@@ -33,12 +35,15 @@
 - `src/qt_trader/cli_render.py`：CLI 表格输出辅助
 - `src/qt_trader/config.py`：YAML 配置加载与校验
 - `src/qt_trader/data/`：行情数据接入与归一化
+- `src/qt_trader/data/qmt_live.py`：QMT 实时/准实时行情接入
 - `src/qt_trader/strategy/`：策略接口与具体实现
 - `src/qt_trader/backtest.py`：历史回测引擎
 - `src/qt_trader/runtime.py`：paper trading 与 signal watch 运行时
+- `src/qt_trader/runtime.py`：paper trading、signal watch 与 live trading 运行时
 - `src/qt_trader/risk.py`：订单和组合级风控
 - `src/qt_trader/broker/`：broker 抽象与适配器
 - `src/qt_trader/storage.py`：SQLite 持久化与查询
+- `src/qt_trader/storage.py`：SQLite 持久化、broker 同步快照与订单对账摘要
 - `src/qt_trader/analytics.py`：回测与市场状态分析指标
 - `src/qt_trader/guardian.py`：运行锁与状态持久化
 - `src/qt_trader/market.py`、`src/qt_trader/scheduler.py`：交易日历与会话调度
@@ -63,12 +68,14 @@
 ## Broker 约束
 
 - 明确区分 `paper`、`readonly`、`http_readonly`、终端骨架、SDK 骨架、未来真实执行等不同能力层级。
+- `guojin_qmt_live` 是当前唯一允许进入真实 QMT 发单链路的 provider，但仍受 `broker.allow_live_trading` 显式开关保护。
 - 当前标为只读或 scaffold 的 broker，不得静默开启真实下单。
 - 依赖本地终端软件或券商 SDK 的路径，必须在失败时给出清晰错误，并保持 preflight 检查可读。
 
 ## 数据与策略约束
 
 - 数据提供方必须统一归一化到项目内部的 bar 模型。
+- `qmt_live` 允许作为实时或准实时数据源，但应默认服务于 `signal-watch` 或 `live-trade`，不要把它误当成稳定的历史研究数据源。
 - 数据回退逻辑，尤其是 AKShare 回退到本地 CSV 的行为，必须显式且有测试覆盖。
 - 策略改动不能破坏多标的处理和基准过滤逻辑，除非配置和文档同步说明。
 
@@ -77,6 +84,9 @@
 - SQLite 是主流程的一部分，不是可有可无的附属功能。
 - 任何涉及存储数据、dashboard 查询、运行状态文件、broker 快照行为的改动，都应补测试。
 - 运行锁和运行状态属于安全关键路径，避免引入重复运行、状态歧义或恢复逻辑不清的问题。
+- live trading 不得复用 paper trading 的本地伪成交逻辑；真实发单与真实成交/持仓同步必须分开处理。
+- 真实下单路径应优先保留 `broker_order_id`，并支持后续把委托、成交、对账串起来。
+- broker 同步逻辑应尽量幂等；同一笔成交重复同步时，不应重复写入本地 fills。
 
 ## 测试要求
 
@@ -123,6 +133,9 @@
 - `96649a6`：增加 market regime 示例配置，形成完整示例链路。
 - `b196149`：增加 signal watch runtime，支持只提醒信号、不下真实单的常驻扫描模式。
 - `9923a1a`：增加分阶段 daily workflow，项目进入按交易日节奏组织任务的运行阶段。
+- 当前工作区关键变更：已增加 `qmt_live` 数据源、`guojin_qmt_live` provider 和 `live-trade` 命令，真实下单仍需显式开启 `broker.allow_live_trading=true`。
+- 当前工作区关键变更：已增加 `broker_order_id`、broker 成交查询和 `reconcile-broker` 命令，live trading 启动前默认先同步 broker 状态。
+- 当前工作区关键变更：broker 同步现已支持按 `broker_order_id` 回补本地订单状态，并将成交同步成幂等的本地 fills。
 
 ## 当前演进主线
 
@@ -132,6 +145,7 @@
 - 阶段四：broker 账户查询、只读联调、快照落库、HTTP 接入与国金方向 scaffold。
 - 阶段五：终端抽象、QMT/PTrade/QMT SDK/xtquant 查询路径准备。
 - 阶段六：市场状态过滤、参数扫描、signal watch、daily workflow，逐步形成日常运行闭环。
+- 阶段七：QMT 实时行情与 live order 提交链路接入，但真实成交回报和撤单管理仍待继续完善。
 
 ## 推荐阅读顺序
 
@@ -149,6 +163,8 @@
 
 - 回测或策略问题：先看 `cli.py` 的 `backtest`，再看 `strategy/`、`backtest.py`、`analytics.py`。
 - 模拟盘或运行时问题：先看 `paper_trade`、`run_session`、`signal_watch`、`daily_workflow`，再看 `runtime.py`、`guardian.py`、`storage.py`。
+- 实时交易问题：先看 `live_trade`、`data/qmt_live.py`、`broker/qmt_live.py`、`broker/qmt_sdk.py`，再看 `runtime.py` 和 `readiness.py`。
+- 对账问题：先看 `reconcile_broker`、`storage.py` 的 broker snapshot/trade/reconciliation 逻辑，再看对应 broker adapter 的 `get_orders` / `get_trades`。
 - broker 相关问题：先看 `broker/factory.py`，再看对应适配器和 `readiness.py`。
 - 数据问题：先看 `data/factory.py`，再看 `csv_data.py` 和 `akshare_data.py`。
 - 风控问题：先看 `risk.py`，再结合 `portfolio.py`、`costs.py`、运行入口一起看。

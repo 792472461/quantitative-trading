@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from qt_trader.broker.base import BrokerGateway
-from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo
+from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo, TradeInfo
 
 
 class ReadOnlyBroker(BrokerGateway):
@@ -59,12 +59,31 @@ class ReadOnlyBroker(BrokerGateway):
                     price=None if item.get("price") is None else float(item["price"]),
                     status=str(item["status"]),
                     timestamp=datetime.fromisoformat(str(item["timestamp"])),
+                    broker_order_id=str(item.get("broker_order_id", "")),
                     reason=str(item.get("reason", "")),
                 )
             )
         return orders
 
+    def get_trades(self) -> list[TradeInfo]:
+        payload = self._load_state()
+        trades = []
+        for item in payload.get("trades", []):
+            trades.append(
+                TradeInfo(
+                    symbol=str(item["symbol"]),
+                    side=str(item["side"]),
+                    quantity=int(item["quantity"]),
+                    price=float(item["price"]),
+                    timestamp=datetime.fromisoformat(str(item["timestamp"])),
+                    broker_order_id=str(item.get("broker_order_id", "")),
+                    trade_id=str(item.get("trade_id", "")),
+                    reason=str(item.get("reason", "")),
+                )
+            )
+        return trades
+
     def _load_state(self) -> dict:
         if not self.state_file.exists():
-            return {"account": {}, "positions": [], "orders": []}
+            return {"account": {}, "positions": [], "orders": [], "trades": []}
         return json.loads(self.state_file.read_text(encoding="utf-8"))

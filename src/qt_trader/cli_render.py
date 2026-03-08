@@ -168,3 +168,50 @@ def render_post_close_summary(trading_date: str, metrics, final_snapshot, execut
     table.add_row("Filled Orders", str(executed_orders))
     table.add_row("Rejected Orders", str(rejected_orders))
     console.print(table)
+
+
+def render_live_trade_result(result) -> None:
+    summary = Table(title="Live Trading Summary")
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Scanned Bars", str(result.scanned_bars))
+    summary.add_row("Latest Bar", "-" if result.latest_timestamp is None else result.latest_timestamp.isoformat())
+    summary.add_row("Submitted Orders", str(len(result.submitted_orders)))
+    summary.add_row("Rejected Orders", str(len(result.rejected_orders)))
+    console.print(summary)
+
+    order_table = Table(title="Submitted Broker Orders")
+    order_table.add_column("Timestamp")
+    order_table.add_column("Symbol")
+    order_table.add_column("Side")
+    order_table.add_column("Quantity", justify="right")
+    order_table.add_column("Status")
+    order_table.add_column("Reason")
+    if result.submitted_orders:
+        for item in result.submitted_orders:
+            order_table.add_row(
+                item.timestamp.isoformat(),
+                item.symbol,
+                item.side,
+                str(item.quantity),
+                item.status,
+                item.reason,
+            )
+    else:
+        order_table.add_row("-", "-", "-", "0", "-", "-")
+    console.print(order_table)
+
+
+def render_reconciliation_summary(summary) -> None:
+    table = Table(title="Broker Reconciliation")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Local Submitted Orders", str(summary.local_submitted_orders))
+    table.add_row("Local Filled Orders", str(summary.local_filled_orders))
+    table.add_row("Local Broker Order IDs", str(summary.local_broker_order_ids))
+    table.add_row("Broker Orders", str(summary.broker_orders))
+    table.add_row("Broker Trades", str(summary.broker_trades))
+    table.add_row("Missing Broker Order IDs", str(summary.missing_broker_order_ids))
+    table.add_row("Unmatched Broker Orders", str(summary.unmatched_broker_orders))
+    table.add_row("Unmatched Broker Trades", str(summary.unmatched_broker_trades))
+    console.print(table)

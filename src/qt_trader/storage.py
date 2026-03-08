@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PortfolioSnapshot, PositionInfo, RuntimeEvent
+from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, OrderSide, PortfolioSnapshot, PositionInfo, RuntimeEvent, TradeInfo
 
 
 @dataclass(slots=True)
@@ -85,6 +85,18 @@ class DailyPerformanceRecord:
     rejected_orders: int
 
 
+@dataclass(slots=True)
+class ReconciliationSummary:
+    local_submitted_orders: int
+    local_filled_orders: int
+    local_broker_order_ids: int
+    broker_orders: int
+    broker_trades: int
+    missing_broker_order_ids: int
+    unmatched_broker_orders: int
+    unmatched_broker_trades: int
+
+
 class SQLiteStorage:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -105,6 +117,7 @@ class SQLiteStorage:
                     timestamp TEXT NOT NULL,
                     price REAL,
                     status TEXT NOT NULL,
+                    broker_order_id TEXT NOT NULL DEFAULT '',
                     reason TEXT NOT NULL
                 )
                 """
@@ -118,13 +131,13 @@ class SQLiteStorage:
                     quantity INTEGER NOT NULL,
                     price REAL NOT NULL,
                     timestamp TEXT NOT NULL,
+                    broker_order_id TEXT NOT NULL DEFAULT '',
                     commission REAL NOT NULL,
                     stamp_duty REAL NOT NULL,
                     slippage_cost REAL NOT NULL
                 )
                 """
             )
-            self._ensure_fill_columns(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS snapshots (
@@ -188,6 +201,24 @@ class SQLiteStorage:
                     price REAL,
                     status TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
+                    broker_order_id TEXT NOT NULL DEFAULT '',
+                    reason TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS broker_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    synced_at TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price REAL NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    broker_order_id TEXT NOT NULL DEFAULT '',
+                    trade_id TEXT NOT NULL DEFAULT '',
                     reason TEXT NOT NULL
                 )
                 """
@@ -232,20 +263,37 @@ class SQLiteStorage:
                 )
                 """
             )
+            self._ensure_fill_columns(conn)
 
     def _ensure_fill_columns(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(fills)").fetchall()}
+        if "broker_order_id" not in columns:
+            conn.execute("ALTER TABLE fills ADD COLUMN broker_order_id TEXT NOT NULL DEFAULT ''")
         if "stamp_duty" not in columns:
             conn.execute("ALTER TABLE fills ADD COLUMN stamp_duty REAL NOT NULL DEFAULT 0")
         if "slippage_cost" not in columns:
             conn.execute("ALTER TABLE fills ADD COLUMN slippage_cost REAL NOT NULL DEFAULT 0")
 
+        order_columns = {row[1] for row in conn.execute("PRAGMA table_info(orders)").fetchall()}
+        if "broker_order_id" not in order_columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN broker_order_id TEXT NOT NULL DEFAULT ''")
+
+        broker_order_columns = {row[1] for row in conn.execute("PRAGMA table_info(broker_orders)").fetchall()}
+        if "broker_order_id" not in broker_order_columns:
+            conn.execute("ALTER TABLE broker_orders ADD COLUMN broker_order_id TEXT NOT NULL DEFAULT ''")
+
+        trade_columns = {row[1] for row in conn.execute("PRAGMA table_info(broker_trades)").fetchall()}
+        if "trade_id" not in trade_columns:
+            conn.execute("ALTER TABLE broker_trades ADD COLUMN trade_id TEXT NOT NULL DEFAULT ''")
+        if "broker_order_id" not in trade_columns:
+            conn.execute("ALTER TABLE broker_trades ADD COLUMN broker_order_id TEXT NOT NULL DEFAULT ''")
+
     def save_order(self, order: Order) -> None:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO orders (symbol, side, quantity, timestamp, price, status, reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO orders (symbol, side, quantity, timestamp, price, status, broker_order_id, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     order.symbol,
@@ -254,6 +302,7 @@ class SQLiteStorage:
                     order.timestamp.isoformat(),
                     order.price,
                     order.status.value,
+                    order.broker_order_id,
                     order.reason,
                 ),
             )
@@ -262,8 +311,8 @@ class SQLiteStorage:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO fills (symbol, side, quantity, price, timestamp, commission, stamp_duty, slippage_cost)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO fills (symbol, side, quantity, price, timestamp, broker_order_id, commission, stamp_duty, slippage_cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fill.symbol,
@@ -271,11 +320,93 @@ class SQLiteStorage:
                     fill.quantity,
                     fill.price,
                     fill.timestamp.isoformat(),
+                    fill.broker_order_id,
                     fill.commission,
                     fill.stamp_duty,
                     fill.slippage_cost,
                 ),
             )
+
+    def save_fill_if_missing(self, fill: Fill, trade_id: str = "") -> bool:
+        with self._connect() as conn:
+            if trade_id:
+                existing = conn.execute(
+                    """
+                    SELECT 1
+                    FROM broker_trades
+                    WHERE trade_id = ?
+                    LIMIT 1
+                    """,
+                    (trade_id,),
+                ).fetchone()
+                if existing is not None:
+                    return False
+            existing = conn.execute(
+                """
+                SELECT 1
+                FROM fills
+                WHERE broker_order_id = ? AND symbol = ? AND quantity = ? AND price = ? AND timestamp = ?
+                LIMIT 1
+                """,
+                (
+                    fill.broker_order_id,
+                    fill.symbol,
+                    fill.quantity,
+                    fill.price,
+                    fill.timestamp.isoformat(),
+                ),
+            ).fetchone()
+            if existing is not None:
+                return False
+            self.save_fill(fill)
+            return True
+
+    def update_order_status(
+        self,
+        *,
+        broker_order_id: str,
+        status: str,
+        reason: str | None = None,
+    ) -> int:
+        if not broker_order_id.strip():
+            return 0
+        with self._connect() as conn:
+            result = conn.execute(
+                """
+                UPDATE orders
+                SET status = ?, reason = CASE WHEN ? IS NULL OR ? = '' THEN reason ELSE ? END
+                WHERE broker_order_id = ?
+                """,
+                (status, reason, reason, reason, broker_order_id),
+            )
+            return int(result.rowcount)
+
+    def attach_broker_order_id(
+        self,
+        *,
+        symbol: str,
+        timestamp: datetime,
+        broker_order_id: str,
+        status: str | None = None,
+    ) -> int:
+        if not broker_order_id.strip():
+            return 0
+        with self._connect() as conn:
+            result = conn.execute(
+                """
+                UPDATE orders
+                SET broker_order_id = ?, status = COALESCE(?, status)
+                WHERE id = (
+                    SELECT id
+                    FROM orders
+                    WHERE symbol = ? AND timestamp = ? AND broker_order_id = ''
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+                """,
+                (broker_order_id, status, symbol, timestamp.isoformat()),
+            )
+            return int(result.rowcount)
 
     def save_snapshot(self, snapshot: PortfolioSnapshot) -> None:
         with self._connect() as conn:
@@ -318,6 +449,7 @@ class SQLiteStorage:
             broker_accounts = conn.execute("SELECT COUNT(*) FROM broker_accounts").fetchone()[0]
             broker_positions = conn.execute("SELECT COUNT(*) FROM broker_positions").fetchone()[0]
             broker_orders = conn.execute("SELECT COUNT(*) FROM broker_orders").fetchone()[0]
+            broker_trades = conn.execute("SELECT COUNT(*) FROM broker_trades").fetchone()[0]
             daily_performance = conn.execute("SELECT COUNT(*) FROM daily_performance").fetchone()[0]
         return {
             "orders": orders,
@@ -328,6 +460,7 @@ class SQLiteStorage:
             "broker_accounts": broker_accounts,
             "broker_positions": broker_positions,
             "broker_orders": broker_orders,
+            "broker_trades": broker_trades,
             "daily_performance": daily_performance,
         }
 
@@ -520,8 +653,19 @@ class SQLiteStorage:
             for order in orders:
                 conn.execute(
                     """
-                    INSERT INTO broker_orders (synced_at, account_id, symbol, side, quantity, price, status, timestamp, reason)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO broker_orders (
+                        synced_at,
+                        account_id,
+                        symbol,
+                        side,
+                        quantity,
+                        price,
+                        status,
+                        timestamp,
+                        broker_order_id,
+                        reason
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         synced_at,
@@ -532,9 +676,154 @@ class SQLiteStorage:
                         order.price,
                         order.status,
                         order.timestamp.isoformat(),
+                        order.broker_order_id,
                         order.reason,
                     ),
                 )
+
+    def save_broker_trades(self, account_id: str, trades: list[TradeInfo], synced_at: str) -> None:
+        with self._connect() as conn:
+            for trade in trades:
+                if trade.trade_id:
+                    existing = conn.execute(
+                        """
+                        SELECT 1
+                        FROM broker_trades
+                        WHERE trade_id = ?
+                        LIMIT 1
+                        """,
+                        (trade.trade_id,),
+                    ).fetchone()
+                    if existing is not None:
+                        continue
+                conn.execute(
+                    """
+                    INSERT INTO broker_trades (
+                        synced_at,
+                        account_id,
+                        symbol,
+                        side,
+                        quantity,
+                        price,
+                        timestamp,
+                        broker_order_id,
+                        trade_id,
+                        reason
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        synced_at,
+                        account_id,
+                        trade.symbol,
+                        trade.side,
+                        trade.quantity,
+                        trade.price,
+                        trade.timestamp.isoformat(),
+                        trade.broker_order_id,
+                        trade.trade_id,
+                        trade.reason,
+                    ),
+                )
+
+    def sync_local_orders_with_broker(
+        self,
+        *,
+        broker_orders: list[OrderInfo],
+        broker_trades: list[TradeInfo],
+    ) -> dict[str, int]:
+        updated_orders = 0
+        inserted_fills = 0
+        seen_trade_order_ids = {trade.broker_order_id for trade in broker_trades if trade.broker_order_id.strip()}
+        traded_quantities: dict[str, int] = {}
+        for trade in broker_trades:
+            if trade.broker_order_id.strip():
+                traded_quantities[trade.broker_order_id] = traded_quantities.get(trade.broker_order_id, 0) + trade.quantity
+
+        for order in broker_orders:
+            if order.broker_order_id:
+                normalized_status = _normalize_local_order_status(order.status, order.broker_order_id in seen_trade_order_ids)
+                traded_quantity = traded_quantities.get(order.broker_order_id, 0)
+                if 0 < traded_quantity < order.quantity:
+                    normalized_status = "PARTIALLY_FILLED"
+                elif traded_quantity >= order.quantity > 0:
+                    normalized_status = "FILLED"
+                updated_orders += self.update_order_status(
+                    broker_order_id=order.broker_order_id,
+                    status=normalized_status,
+                    reason=order.reason,
+                )
+
+        for trade in broker_trades:
+            fill = Fill(
+                symbol=trade.symbol,
+                side=_trade_side_to_enum(trade.side),
+                quantity=trade.quantity,
+                price=trade.price,
+                timestamp=trade.timestamp,
+                broker_order_id=trade.broker_order_id,
+            )
+            if self.save_fill_if_missing(fill, trade_id=trade.trade_id):
+                inserted_fills += 1
+            if trade.broker_order_id:
+                target_status = "FILLED"
+                broker_order = next((item for item in broker_orders if item.broker_order_id == trade.broker_order_id), None)
+                if broker_order is not None and traded_quantities.get(trade.broker_order_id, 0) < broker_order.quantity:
+                    target_status = "PARTIALLY_FILLED"
+                updated_orders += self.update_order_status(
+                    broker_order_id=trade.broker_order_id,
+                    status=target_status,
+                    reason=trade.reason,
+                )
+        return {
+            "updated_orders": updated_orders,
+            "inserted_fills": inserted_fills,
+        }
+
+    def save_broker_sync_bundle(
+        self,
+        account: AccountInfo,
+        positions: list[PositionInfo],
+        orders: list[OrderInfo],
+        trades: list[TradeInfo],
+        synced_at: str,
+    ) -> None:
+        self.save_broker_snapshot(account, positions, orders, synced_at)
+        self.save_broker_trades(account.account_id, trades, synced_at)
+
+    def reconcile_orders_with_broker(
+        self,
+        account_id: str,
+        broker_orders: list[OrderInfo],
+        broker_trades: list[TradeInfo],
+    ) -> ReconciliationSummary:
+        with self._connect() as conn:
+            local_rows = conn.execute(
+                """
+                SELECT status, broker_order_id
+                FROM orders
+                ORDER BY id DESC
+                """
+            ).fetchall()
+
+        local_statuses = [str(row[0]) for row in local_rows]
+        local_broker_ids = {str(row[1]) for row in local_rows if str(row[1]).strip()}
+        broker_order_ids = {item.broker_order_id for item in broker_orders if item.broker_order_id.strip()}
+        broker_trade_order_ids = {item.broker_order_id for item in broker_trades if item.broker_order_id.strip()}
+        unresolved_local = {status for status in local_statuses if status in {"SUBMITTED", "NEW"}}
+        unmatched_broker_orders = broker_order_ids - local_broker_ids
+        unmatched_broker_trades = broker_trade_order_ids - local_broker_ids
+
+        return ReconciliationSummary(
+            local_submitted_orders=sum(1 for status in local_statuses if status == "SUBMITTED"),
+            local_filled_orders=sum(1 for status in local_statuses if status == "FILLED"),
+            local_broker_order_ids=len(local_broker_ids),
+            broker_orders=len(broker_orders),
+            broker_trades=len(broker_trades),
+            missing_broker_order_ids=len(unresolved_local) if unresolved_local else max(0, sum(1 for status in local_statuses if status == "SUBMITTED") - len(local_broker_ids)),
+            unmatched_broker_orders=len(unmatched_broker_orders),
+            unmatched_broker_trades=len(unmatched_broker_trades),
+        )
 
     def dashboard_summary(self) -> DashboardSummary:
         counts = self.counts()
@@ -932,3 +1221,23 @@ class SQLiteStorage:
             expectancy=float(row[14]),
             final_equity=float(row[15]),
         )
+
+
+def _trade_side_to_enum(side: str) -> OrderSide:
+    normalized = side.upper()
+    if normalized == "SELL":
+        return OrderSide.SELL
+    return OrderSide.BUY
+
+
+def _normalize_local_order_status(status: str, has_trade: bool) -> str:
+    normalized = status.upper()
+    if has_trade and normalized not in {"FILLED", "PARTIALLY_FILLED"}:
+        return "PARTIALLY_FILLED"
+    if normalized in {"CANCELLED", "CANCELED"}:
+        return "CANCELED"
+    if normalized in {"PART_FILLED", "PARTIALLY_FILLED", "PARTIAL_FILLED"}:
+        return "PARTIALLY_FILLED"
+    if normalized in {"FILLED", "REJECTED", "SUBMITTED", "NEW"}:
+        return normalized
+    return "SUBMITTED"

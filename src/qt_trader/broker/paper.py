@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from qt_trader.broker.base import BrokerGateway
 from qt_trader.costs import ExecutionCostModel
-from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo
+from qt_trader.models import AccountInfo, Fill, Order, OrderInfo, PositionInfo, TradeInfo
 from qt_trader.portfolio import Portfolio
 
 
@@ -25,6 +25,7 @@ class PaperBroker(BrokerGateway):
                 price=execution_price,
                 status="FILLED",
                 timestamp=order.timestamp,
+                broker_order_id=order.broker_order_id,
                 reason=order.reason,
             )
         )
@@ -34,6 +35,7 @@ class PaperBroker(BrokerGateway):
             quantity=order.quantity,
             price=execution_price,
             timestamp=order.timestamp,
+            broker_order_id=order.broker_order_id,
             commission=commission,
             stamp_duty=stamp_duty,
             slippage_cost=slippage_cost,
@@ -75,3 +77,19 @@ class PaperBroker(BrokerGateway):
 
     def get_orders(self) -> list[OrderInfo]:
         return list(self._orders)
+
+    def get_trades(self) -> list[TradeInfo]:
+        return [
+            TradeInfo(
+                symbol=item.symbol,
+                side=item.side,
+                quantity=item.quantity,
+                price=0.0 if item.price is None else item.price,
+                timestamp=item.timestamp,
+                broker_order_id=item.broker_order_id,
+                trade_id=item.broker_order_id,
+                reason=item.reason,
+            )
+            for item in self._orders
+            if item.status == "FILLED"
+        ]

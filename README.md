@@ -23,6 +23,8 @@
 - 本地模拟撮合网关
 - SQLite 持久化
 - Paper trading 运行时
+- QMT 实时行情数据源
+- QMT live trading 运行时
 - CLI 运行入口
 
 ## 设计目标
@@ -52,6 +54,9 @@ qt-trader broker-account --config config\readonly_broker.yaml
 qt-trader broker-sync --config config\readonly_broker.yaml
 qt-trader broker-account --config config\http_readonly_broker.yaml
 qt-trader broker-account --config config\guojin_http_readonly.yaml
+qt-trader preflight-check --config config\guojin_qmt_live.yaml
+qt-trader reconcile-broker --config config\guojin_qmt_live.yaml
+qt-trader live-trade --config config\guojin_qmt_live.yaml --iterations 1 --force
 ```
 
 ## 项目结构
@@ -89,6 +94,7 @@ tests/
 - 把只读 broker 的账户快照同步进本地数据库
 - 使用 HTTP 只读 broker 骨架对接真实券商 API
 - 以国金证券为主的只读接入准备文档和配置
+- 使用 QMT SDK 拉取实时行情并执行受保护的 live order 提交链路
 - 记录订单、成交和资金曲线
 - 运行 paper trading 主链路
 - 基于交易时段控制是否执行
@@ -97,7 +103,7 @@ tests/
 
 要进入真实实盘，还需要补：
 
-- 真实券商 API 适配实现
+- 真实成交回报、成交落库与仓位回补闭环
 - 交易日历、滑点、手续费细化
 - 更完整的监控看板和外部告警渠道
 
@@ -120,6 +126,9 @@ qt-trader broker-account --config config\readonly_broker.yaml
 qt-trader broker-sync --config config\readonly_broker.yaml
 qt-trader broker-account --config config\http_readonly_broker.yaml
 qt-trader broker-account --config config\guojin_http_readonly.yaml
+qt-trader preflight-check --config config\guojin_qmt_live.yaml
+qt-trader reconcile-broker --config config\guojin_qmt_live.yaml
+qt-trader live-trade --config config\guojin_qmt_live.yaml --iterations 1 --force
 qt-trader version
 ```
 
@@ -127,6 +136,10 @@ qt-trader version
 `run-session` 会先检查当前是否在交易时段内；`--force` 可用于离线演练。
 `signal-watch` 会在最新一根 bar 上发现新信号时提醒，但不会下真实订单。
 `daily-workflow` 会在 `9:00-9:30` 做盘前复核和参数筛选，在 `15:00` 后做收益统计；当前“实时新闻抓取”仍是待接入项。
+`guojin_qmt_live.yaml` 会通过 `xtquant.xtdata` 读取 QMT 实时行情，并通过 `XtQuantTrader` 发单；默认 `broker.allow_live_trading=false`，需要显式开启后 `live-trade` 才会提交真实订单。
+`live-trade` 不复用 `paper-trade` 的伪成交逻辑，只负责信号、风控、发单和 broker 同步，避免本地假填真实成交。
+`reconcile-broker` 会把券商账户、持仓、委托、成交同步进本地 SQLite，并输出本地订单与券商订单/成交的差异摘要。
+同步过程中会按 `broker_order_id` 回补本地订单状态，支持 `SUBMITTED`、`PARTIALLY_FILLED`、`FILLED`、`CANCELED` 等实盘状态。
 运行日志会写到 `logs/runtime.jsonl`，告警可输出到终端和 `logs/alerts.log`。
 运行锁默认写到 `runtime.lock`，运行状态默认写到 `runtime_state.json`。
 `readonly_broker.yaml` 是只读联调样例，不会允许真实下单，只会读取本地账户快照文件。
@@ -139,10 +152,11 @@ qt-trader version
 
 ## 真实数据
 
-项目现在支持两种数据源：
+项目现在支持三种数据源：
 
 - `csv`: 本地 CSV，适合回放和研究
 - `akshare`: 拉取 A 股历史行情，适合先做真实数据接入
+- `qmt_live`: 通过本机 QMT/xtquant 获取实时或准实时 bar，适合实盘前联调
 
 可以参考 [config/akshare.yaml](F:/workspace/python/quantitative-trading/config/akshare.yaml) 抓取 A 股历史数据。
 如果 AKShare 临时不可用，而本地已经存在缓存 CSV，系统会自动回退到本地缓存。
