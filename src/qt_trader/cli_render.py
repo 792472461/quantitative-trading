@@ -207,11 +207,36 @@ def render_reconciliation_summary(summary) -> None:
     table.add_column("Metric")
     table.add_column("Value", justify="right")
     table.add_row("Local Submitted Orders", str(summary.local_submitted_orders))
+    table.add_row("Local Partial Orders", str(summary.local_partial_orders))
     table.add_row("Local Filled Orders", str(summary.local_filled_orders))
+    table.add_row("Local Canceled Orders", str(summary.local_canceled_orders))
     table.add_row("Local Broker Order IDs", str(summary.local_broker_order_ids))
     table.add_row("Broker Orders", str(summary.broker_orders))
     table.add_row("Broker Trades", str(summary.broker_trades))
     table.add_row("Missing Broker Order IDs", str(summary.missing_broker_order_ids))
     table.add_row("Unmatched Broker Orders", str(summary.unmatched_broker_orders))
     table.add_row("Unmatched Broker Trades", str(summary.unmatched_broker_trades))
+    console.print(table)
+
+
+def render_pending_orders(rows) -> None:
+    table = Table(title="Pending Local Orders")
+    table.add_column("Timestamp")
+    table.add_column("Symbol")
+    table.add_column("Side")
+    table.add_column("Quantity", justify="right")
+    table.add_column("Status")
+    table.add_column("Broker Order ID")
+    if rows:
+        for row in rows:
+            table.add_row(
+                str(row["timestamp"]),
+                str(row["symbol"]),
+                str(row["side"]),
+                str(row["quantity"]),
+                str(row["status"]),
+                str(row["broker_order_id"]) or "-",
+            )
+    else:
+        table.add_row("-", "-", "-", "0", "-", "-")
     console.print(table)

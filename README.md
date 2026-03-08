@@ -56,6 +56,7 @@ qt-trader broker-account --config config\http_readonly_broker.yaml
 qt-trader broker-account --config config\guojin_http_readonly.yaml
 qt-trader preflight-check --config config\guojin_qmt_live.yaml
 qt-trader reconcile-broker --config config\guojin_qmt_live.yaml
+qt-trader recover-live-session --config config\guojin_qmt_live.yaml
 qt-trader live-trade --config config\guojin_qmt_live.yaml --iterations 1 --force
 ```
 
@@ -128,6 +129,7 @@ qt-trader broker-account --config config\http_readonly_broker.yaml
 qt-trader broker-account --config config\guojin_http_readonly.yaml
 qt-trader preflight-check --config config\guojin_qmt_live.yaml
 qt-trader reconcile-broker --config config\guojin_qmt_live.yaml
+qt-trader recover-live-session --config config\guojin_qmt_live.yaml
 qt-trader live-trade --config config\guojin_qmt_live.yaml --iterations 1 --force
 qt-trader version
 ```
@@ -140,6 +142,7 @@ qt-trader version
 `live-trade` 不复用 `paper-trade` 的伪成交逻辑，只负责信号、风控、发单和 broker 同步，避免本地假填真实成交。
 `reconcile-broker` 会把券商账户、持仓、委托、成交同步进本地 SQLite，并输出本地订单与券商订单/成交的差异摘要。
 同步过程中会按 `broker_order_id` 回补本地订单状态，支持 `SUBMITTED`、`PARTIALLY_FILLED`、`FILLED`、`CANCELED` 等实盘状态。
+`recover-live-session` 会在重新接管 live 会话前展示当前本地未完成订单，并先做一轮 broker 同步与状态回补。
 运行日志会写到 `logs/runtime.jsonl`，告警可输出到终端和 `logs/alerts.log`。
 运行锁默认写到 `runtime.lock`，运行状态默认写到 `runtime_state.json`。
 `readonly_broker.yaml` 是只读联调样例，不会允许真实下单，只会读取本地账户快照文件。

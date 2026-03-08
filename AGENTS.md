@@ -136,6 +136,7 @@
 - 当前工作区关键变更：已增加 `qmt_live` 数据源、`guojin_qmt_live` provider 和 `live-trade` 命令，真实下单仍需显式开启 `broker.allow_live_trading=true`。
 - 当前工作区关键变更：已增加 `broker_order_id`、broker 成交查询和 `reconcile-broker` 命令，live trading 启动前默认先同步 broker 状态。
 - 当前工作区关键变更：broker 同步现已支持按 `broker_order_id` 回补本地订单状态，并将成交同步成幂等的本地 fills。
+- 当前工作区关键变更：已增加 `recover-live-session` 命令，用于 live 会话重启后的订单接管与状态恢复。
 
 ## 当前演进主线
 
@@ -165,6 +166,7 @@
 - 模拟盘或运行时问题：先看 `paper_trade`、`run_session`、`signal_watch`、`daily_workflow`，再看 `runtime.py`、`guardian.py`、`storage.py`。
 - 实时交易问题：先看 `live_trade`、`data/qmt_live.py`、`broker/qmt_live.py`、`broker/qmt_sdk.py`，再看 `runtime.py` 和 `readiness.py`。
 - 对账问题：先看 `reconcile_broker`、`storage.py` 的 broker snapshot/trade/reconciliation 逻辑，再看对应 broker adapter 的 `get_orders` / `get_trades`。
+- 恢复问题：先看 `recover_live_session`、`pending_local_orders` 和 `sync_local_orders_with_broker`，确认重启后未完成订单如何接管。
 - broker 相关问题：先看 `broker/factory.py`，再看对应适配器和 `readiness.py`。
 - 数据问题：先看 `data/factory.py`，再看 `csv_data.py` 和 `akshare_data.py`。
 - 风控问题：先看 `risk.py`，再结合 `portfolio.py`、`costs.py`、运行入口一起看。

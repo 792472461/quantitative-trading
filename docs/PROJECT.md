@@ -86,6 +86,7 @@
 - `python -m qt_trader.cli daily-workflow --config config/example.yaml --iterations 1 --at 2026-03-06T09:10:00`
 - `python -m qt_trader.cli preflight-check --config config/guojin_qmt_live.yaml`
 - `python -m qt_trader.cli reconcile-broker --config config/guojin_qmt_live.yaml`
+- `python -m qt_trader.cli recover-live-session --config config/guojin_qmt_live.yaml`
 - `python -m qt_trader.cli live-trade --config config/guojin_qmt_live.yaml --iterations 1 --force`
 - 回测命令会附带输出收益率、胜率、盈亏比、最大回撤等指标
 - 回测分析会附带输出 Sharpe、Calmar、Expectancy
@@ -99,6 +100,7 @@
 - `live-trade` 只在显式开启 `broker.allow_live_trading=true` 后提交真实订单，不会复用 paper runtime 的本地伪成交逻辑
 - `reconcile-broker` 会将 broker 账户、持仓、委托、成交快照落库，并输出本地与券商的订单差异摘要
 - broker 同步过程会按 `broker_order_id` 回补本地订单状态，并将成交幂等落库到 `fills`
+- `recover-live-session` 会在重新接管实时交易前展示未完成本地订单，适合程序重启后的恢复流程
 
 ## Iteration Log
 
@@ -244,6 +246,7 @@
 - 增加 `live-trade` CLI 命令，走信号、风控、发单、broker 同步链路
 - 增加 `broker_order_id`、broker 成交查询与 `reconcile-broker` 命令，补实盘前订单/成交对账基础
 - 增加本地订单状态回补逻辑，支持 `PARTIALLY_FILLED` / `FILLED` 等状态随 broker 同步自动更新
+- 增加 `recover-live-session` 命令和未完成订单视图，补程序重启后的 live 会话恢复入口
 - 保持 `paper-trade` 与 live trading 分离，避免把真实订单伪造成即时成交
 - 增加 QMT live 配置样例与回归测试
 

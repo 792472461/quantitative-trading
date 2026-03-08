@@ -93,8 +93,9 @@
 1. 先跑 `preflight-check --config config/guojin_qmt_live.yaml`
 2. 确认 `xtquant`、QMT 终端路径、userdata 路径、账户环境都正确
 3. 先跑 `reconcile-broker --config config/guojin_qmt_live.yaml`，确认账户、持仓、委托、成交查询口径正确
-4. 先保持 `broker.allow_live_trading=false`，只验证实时行情和查询链路
-5. 最后再显式开启 `broker.allow_live_trading=true` 做小额联调
+4. 如程序重启或中断，先跑 `recover-live-session --config config/guojin_qmt_live.yaml` 接管未完成订单
+5. 先保持 `broker.allow_live_trading=false`，只验证实时行情和查询链路
+6. 最后再显式开启 `broker.allow_live_trading=true` 做小额联调
 
 ```bash
 $env:BROKER_ACCOUNT_ID='guojin-qmt-demo-001'
@@ -102,5 +103,6 @@ python -m qt_trader.cli broker-account --config config/guojin_qmt.yaml
 python -m qt_trader.cli preflight-check --config config/guojin_qmt.yaml
 python -m qt_trader.cli preflight-check --config config/guojin_qmt_live.yaml
 python -m qt_trader.cli reconcile-broker --config config/guojin_qmt_live.yaml
+python -m qt_trader.cli recover-live-session --config config/guojin_qmt_live.yaml
 python -m qt_trader.cli live-trade --config config/guojin_qmt_live.yaml --iterations 1 --force
 ```

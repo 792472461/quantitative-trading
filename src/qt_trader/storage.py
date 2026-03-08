@@ -88,7 +88,9 @@ class DailyPerformanceRecord:
 @dataclass(slots=True)
 class ReconciliationSummary:
     local_submitted_orders: int
+    local_partial_orders: int
     local_filled_orders: int
+    local_canceled_orders: int
     local_broker_order_ids: int
     broker_orders: int
     broker_trades: int
@@ -816,7 +818,9 @@ class SQLiteStorage:
 
         return ReconciliationSummary(
             local_submitted_orders=sum(1 for status in local_statuses if status == "SUBMITTED"),
+            local_partial_orders=sum(1 for status in local_statuses if status == "PARTIALLY_FILLED"),
             local_filled_orders=sum(1 for status in local_statuses if status == "FILLED"),
+            local_canceled_orders=sum(1 for status in local_statuses if status == "CANCELED"),
             local_broker_order_ids=len(local_broker_ids),
             broker_orders=len(broker_orders),
             broker_trades=len(broker_trades),
@@ -824,6 +828,30 @@ class SQLiteStorage:
             unmatched_broker_orders=len(unmatched_broker_orders),
             unmatched_broker_trades=len(unmatched_broker_trades),
         )
+
+    def pending_local_orders(self) -> list[dict[str, object]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT symbol, side, quantity, timestamp, price, status, broker_order_id, reason
+                FROM orders
+                WHERE status IN ('NEW', 'SUBMITTED', 'PARTIALLY_FILLED')
+                ORDER BY id DESC
+                """
+            ).fetchall()
+        return [
+            {
+                "symbol": str(row[0]),
+                "side": str(row[1]),
+                "quantity": int(row[2]),
+                "timestamp": str(row[3]),
+                "price": None if row[4] is None else float(row[4]),
+                "status": str(row[5]),
+                "broker_order_id": str(row[6]),
+                "reason": str(row[7]),
+            }
+            for row in rows
+        ]
 
     def dashboard_summary(self) -> DashboardSummary:
         counts = self.counts()

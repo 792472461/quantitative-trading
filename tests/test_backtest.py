@@ -1580,6 +1580,41 @@ def test_storage_sync_local_orders_marks_partial_fill_when_trade_quantity_is_sma
     assert row is not None
     assert row[0] == "PARTIALLY_FILLED"
     assert summary.local_filled_orders == 0
+    assert summary.local_partial_orders == 1
+
+
+def test_pending_local_orders_returns_open_order_rows(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "pending_local.db")
+    storage.save_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.BUY,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:31:00"),
+            price=1500.0,
+            status=OrderStatus.SUBMITTED,
+            broker_order_id="broker-001",
+            reason="live",
+        )
+    )
+    storage.save_order(
+        Order(
+            symbol="000001.SZ",
+            side=OrderSide.SELL,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T09:32:00"),
+            price=10.0,
+            status=OrderStatus.FILLED,
+            broker_order_id="broker-002",
+            reason="done",
+        )
+    )
+
+    rows = storage.pending_local_orders()
+
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "600519.SH"
+    assert rows[0]["status"] == "SUBMITTED"
 
 
 def test_preflight_checks_warn_when_live_qmt_switch_is_disabled() -> None:

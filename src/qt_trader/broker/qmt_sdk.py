@@ -323,7 +323,16 @@ def _normalize_order_side(value: Any) -> str:
 def _normalize_order_status(value: Any) -> str:
     if value is None:
         return ""
-    return str(value).upper()
+    text = str(value).upper()
+    if text in {"CANCELLED", "CANCELED", "CANCEL", "撤单", "已撤", "废单", "REJECTED", "INVALID"}:
+        return "CANCELED"
+    if text in {"PART_FILLED", "PARTIALLY_FILLED", "PARTIAL_FILLED", "部分成交", "部成"}:
+        return "PARTIALLY_FILLED"
+    if text in {"FILLED", "ALL_TRADED", "已成", "全部成交"}:
+        return "FILLED"
+    if text in {"NEW", "SUBMITTED", "已报", "未成", "PENDING"}:
+        return "SUBMITTED"
+    return text
 
 
 def _normalize_timestamp(value: Any) -> datetime:

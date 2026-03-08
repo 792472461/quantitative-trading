@@ -25,6 +25,7 @@ from qt_trader.cli_render import (
     render_backtest_metrics,
     render_live_trade_result,
     render_market_regime_metrics,
+    render_pending_orders,
     render_post_close_summary,
     render_pre_market_review,
     render_reconciliation_summary,
@@ -223,6 +224,7 @@ def live_trade(
         broker_orders=broker.get_orders(),
         broker_trades=broker.get_trades(),
     )
+    pending_orders = storage.pending_local_orders()
     render_reconciliation_summary(
         storage.reconcile_orders_with_broker(
             account_id=broker.get_account_info().account_id,
@@ -230,6 +232,9 @@ def live_trade(
             broker_trades=broker.get_trades(),
         )
     )
+    if pending_orders:
+        # Startup recovery must expose still-open local orders before any new live submission.
+        render_pending_orders(pending_orders)
     if initial_sync_result["updated_orders"] or initial_sync_result["inserted_fills"]:
         console.print(
             "Live startup sync applied: "
@@ -299,8 +304,39 @@ def reconcile_broker(config: Path = typer.Option(..., exists=True, readable=True
             broker_trades=trades,
         )
     )
+    render_pending_orders(storage.pending_local_orders())
     console.print(
         f"Broker sync applied: updated_orders={sync_result['updated_orders']} inserted_fills={sync_result['inserted_fills']}"
+    )
+
+
+@app.command()
+def recover_live_session(config: Path = typer.Option(..., exists=True, readable=True, help="Path to YAML config.")) -> None:
+    app_config = load_config(config)
+    if app_config.broker.provider.lower() != "guojin_qmt_live":
+        console.print("[red]recover-live-session requires broker.provider=guojin_qmt_live.[/red]")
+        raise typer.Exit(code=1)
+    storage = SQLiteStorage(app_config.storage.sqlite_path)
+    broker = create_broker(app_config)
+    synced_at = datetime.now().isoformat()
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    orders = broker.get_orders()
+    trades = broker.get_trades()
+    storage.save_broker_sync_bundle(account, positions, orders, trades, synced_at)
+    sync_result = storage.sync_local_orders_with_broker(broker_orders=orders, broker_trades=trades)
+    render_reconciliation_summary(
+        storage.reconcile_orders_with_broker(
+            account_id=account.account_id,
+            broker_orders=orders,
+            broker_trades=trades,
+        )
+    )
+    render_pending_orders(storage.pending_local_orders())
+    console.print(
+        "Recovery sync applied: "
+        f"updated_orders={sync_result['updated_orders']} "
+        f"inserted_fills={sync_result['inserted_fills']}"
     )
 
 
