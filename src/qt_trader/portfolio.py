@@ -18,12 +18,18 @@ class Portfolio:
         gross = fill.price * fill.quantity
         total_fees = fill.total_fees
         cost = gross + total_fees
+        fill_date = fill.timestamp.date()
 
         if fill.side == OrderSide.BUY:
             total_cost = position.average_cost * position.quantity + cost
             position.quantity += fill.quantity
             position.average_cost = total_cost / position.quantity
             position.last_buy_timestamp = fill.timestamp
+            if position.t1_blocked_date == fill_date:
+                position.t1_blocked_quantity += fill.quantity
+            else:
+                position.t1_blocked_date = fill_date
+                position.t1_blocked_quantity = fill.quantity
             self.cash -= cost
         else:
             position.quantity -= fill.quantity
@@ -31,6 +37,8 @@ class Portfolio:
             if position.quantity == 0:
                 position.average_cost = 0.0
                 position.last_buy_timestamp = None
+                position.t1_blocked_date = None
+                position.t1_blocked_quantity = 0
 
     def snapshot(self, timestamp: datetime, latest_prices: dict[str, float]) -> PortfolioSnapshot:
         positions_value = 0.0

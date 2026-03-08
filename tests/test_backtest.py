@@ -445,6 +445,49 @@ def test_storage_daily_performance_and_fill_queries(tmp_path: Path) -> None:
     assert buy_rows[0]["symbol"] == "600519.SH"
 
 
+def test_storage_latest_daily_performance_before_ignores_same_day_rows(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "daily_perf_before.db")
+    storage.save_daily_performance(
+        trading_date="2026-03-09",
+        created_at="2026-03-09T15:05:00",
+        daily_pnl=120.0,
+        daily_return_pct=0.12,
+        total_return_pct=0.12,
+        max_drawdown_pct=0.3,
+        final_equity=100120.0,
+        filled_orders=1,
+        rejected_orders=0,
+    )
+    storage.save_daily_performance(
+        trading_date="2026-03-10",
+        created_at="2026-03-10T15:05:00",
+        daily_pnl=80.0,
+        daily_return_pct=0.08,
+        total_return_pct=0.20,
+        max_drawdown_pct=0.3,
+        final_equity=100200.0,
+        filled_orders=1,
+        rejected_orders=0,
+    )
+    storage.save_daily_performance(
+        trading_date="2026-03-10",
+        created_at="2026-03-10T15:06:00",
+        daily_pnl=81.0,
+        daily_return_pct=0.081,
+        total_return_pct=0.201,
+        max_drawdown_pct=0.3,
+        final_equity=100201.0,
+        filled_orders=1,
+        rejected_orders=0,
+    )
+
+    previous_row = storage.latest_daily_performance_before("2026-03-10")
+
+    assert previous_row is not None
+    assert previous_row.trading_date == "2026-03-09"
+    assert previous_row.final_equity == 100120.0
+
+
 def test_paper_broker_account_queries() -> None:
     config = load_config(Path("config/example.yaml"))
     portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
@@ -1710,6 +1753,73 @@ def test_t_plus_one_sell_blocks_same_day_exit() -> None:
     )
 
     assert accepted is False
+    assert reason == "t+1 sell blocked"
+
+
+def test_t_plus_one_allows_selling_prior_day_quantity_after_same_day_add_on() -> None:
+    risk_manager = RiskManager(
+        max_position_pct=0.5,
+        max_drawdown_pct=0.2,
+        max_total_exposure_pct=0.8,
+        max_positions=5,
+        max_symbol_quantity=1000,
+        t_plus_one_sell=True,
+    )
+    portfolio = Portfolio(initial_cash=100000)
+    broker = create_broker(load_config(Path("config/example.yaml")), portfolio=portfolio)
+    portfolio.apply_fill(
+        broker.submit_order(
+            Order(
+                symbol="600519.SH",
+                side=OrderSide.BUY,
+                quantity=100,
+                timestamp=datetime.fromisoformat("2026-03-08T10:00:00"),
+                price=100.0,
+            ),
+            100.0,
+        )
+    )
+    portfolio.apply_fill(
+        broker.submit_order(
+            Order(
+                symbol="600519.SH",
+                side=OrderSide.BUY,
+                quantity=100,
+                timestamp=datetime.fromisoformat("2026-03-09T10:00:00"),
+                price=101.0,
+            ),
+            101.0,
+        )
+    )
+    snapshot = portfolio.snapshot(datetime.fromisoformat("2026-03-09T14:30:00"), {"600519.SH": 101.0})
+
+    accepted_old_lot, _ = risk_manager.validate_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.SELL,
+            quantity=100,
+            timestamp=datetime.fromisoformat("2026-03-09T14:30:00"),
+            price=101.0,
+        ),
+        snapshot,
+        101.0,
+        snapshot.positions["600519.SH"],
+    )
+    accepted_full_position, reason = risk_manager.validate_order(
+        Order(
+            symbol="600519.SH",
+            side=OrderSide.SELL,
+            quantity=200,
+            timestamp=datetime.fromisoformat("2026-03-09T14:30:00"),
+            price=101.0,
+        ),
+        snapshot,
+        101.0,
+        snapshot.positions["600519.SH"],
+    )
+
+    assert accepted_old_lot is True
+    assert accepted_full_position is False
     assert reason == "t+1 sell blocked"
 
 

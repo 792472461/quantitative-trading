@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 
@@ -74,6 +74,8 @@ class Position:
     quantity: int = 0
     average_cost: float = 0.0
     last_buy_timestamp: datetime | None = None
+    t1_blocked_date: date | None = None
+    t1_blocked_quantity: int = 0
 
 
 @dataclass(slots=True)

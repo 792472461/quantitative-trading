@@ -210,6 +210,8 @@ def live_trade(
     except BrokerConfigurationError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
+    strategy = build_strategy(app_config)
+    risk_manager = build_risk_manager(app_config)
 
     # Live trading starts from the broker's actual state, not from any locally inferred position snapshot.
     initial_synced_at = datetime.now().isoformat()
@@ -257,9 +259,9 @@ def live_trade(
                 bars = create_data_feed(app_config).load()
                 try:
                     runtime = LiveTradingRuntime(
-                        strategy=build_strategy(app_config),
+                        strategy=strategy,
                         broker=broker,
-                        risk_manager=build_risk_manager(app_config),
+                        risk_manager=risk_manager,
                         storage=storage,
                         logger=logger,
                         alert_notifier=alert_notifier,
@@ -423,8 +425,8 @@ def daily_workflow(
                             console.print("[red]No market data loaded.[/red]")
                             raise typer.Exit(code=1)
                         metrics = analyze_backtest(result, app_config.backtest.initial_cash)
-                        previous_rows = storage.latest_daily_performance(limit=1)
-                        base_equity = previous_rows[0].final_equity if previous_rows else app_config.backtest.initial_cash
+                        previous_row = storage.latest_daily_performance_before(trading_date)
+                        base_equity = previous_row.final_equity if previous_row is not None else app_config.backtest.initial_cash
                         daily_pnl = final_snapshot.total_value - base_equity
                         daily_return_pct = 0.0 if base_equity <= 0 else daily_pnl / base_equity * 100
                         storage.save_daily_performance(

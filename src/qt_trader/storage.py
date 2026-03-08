@@ -555,6 +555,41 @@ class SQLiteStorage:
             for row in rows
         ]
 
+    def latest_daily_performance_before(self, trading_date: str) -> DailyPerformanceRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    trading_date,
+                    created_at,
+                    daily_pnl,
+                    daily_return_pct,
+                    total_return_pct,
+                    max_drawdown_pct,
+                    final_equity,
+                    filled_orders,
+                    rejected_orders
+                FROM daily_performance
+                WHERE trading_date < ?
+                ORDER BY trading_date DESC, id DESC
+                LIMIT 1
+                """,
+                (trading_date,),
+            ).fetchone()
+        if row is None:
+            return None
+        return DailyPerformanceRecord(
+            trading_date=str(row[0]),
+            created_at=str(row[1]),
+            daily_pnl=float(row[2]),
+            daily_return_pct=float(row[3]),
+            total_return_pct=float(row[4]),
+            max_drawdown_pct=float(row[5]),
+            final_equity=float(row[6]),
+            filled_orders=int(row[7]),
+            rejected_orders=int(row[8]),
+        )
+
     def fills_on_date(self, trading_date: str, side: str | None = None) -> list[dict[str, object]]:
         sql = """
             SELECT symbol, side, quantity, price, timestamp, commission, stamp_duty

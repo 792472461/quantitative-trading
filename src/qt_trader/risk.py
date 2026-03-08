@@ -33,12 +33,13 @@ class RiskManager:
         if order.side == OrderSide.SELL:
             if existing_position is None or existing_position.quantity < order.quantity:
                 return False, "insufficient position"
-            if (
-                self.t_plus_one_sell
-                and existing_position.last_buy_timestamp is not None
-                and existing_position.last_buy_timestamp.date() >= order.timestamp.date()
-            ):
-                return False, "t+1 sell blocked"
+            if self.t_plus_one_sell:
+                blocked_quantity = 0
+                if existing_position.t1_blocked_date == order.timestamp.date():
+                    blocked_quantity = existing_position.t1_blocked_quantity
+                sellable_quantity = existing_position.quantity - blocked_quantity
+                if order.quantity > sellable_quantity:
+                    return False, "t+1 sell blocked"
             return True, ""
 
         order_value = current_price * order.quantity

@@ -303,6 +303,16 @@ class SignalWatchingRuntime:
             ]
         )
 
+    @staticmethod
+    def _resolve_market_price(signal: Signal, latest_prices: dict[str, float], bar: Bar) -> float:
+        if signal.symbol in latest_prices:
+            return latest_prices[signal.symbol]
+        if signal.reference_price is not None:
+            return signal.reference_price
+        if signal.symbol == bar.symbol:
+            return bar.close
+        raise ValueError(f"No market price available for signal symbol={signal.symbol}")
+
     def _record_event(
         self,
         event_type: str,
@@ -409,16 +419,17 @@ class LiveTradingRuntime:
                     if self.signal_state_store is not None and self.signal_state_store.has_seen(signal_key):
                         continue
 
+                    market_price = self._resolve_market_price(signal, latest_prices, bar)
                     order = Order(
                         symbol=signal.symbol,
                         side=signal.side,
                         quantity=signal.quantity,
                         timestamp=bar.timestamp,
-                        price=bar.close,
+                        price=market_price,
                         reason=signal.reason,
                     )
                     existing_position = snapshot.positions.get(signal.symbol)
-                    accepted, reason = self.risk_manager.validate_order(order, snapshot, bar.close, existing_position)
+                    accepted, reason = self.risk_manager.validate_order(order, snapshot, market_price, existing_position)
                     if not accepted:
                         order.status = OrderStatus.REJECTED
                         order.reason = reason
@@ -435,7 +446,7 @@ class LiveTradingRuntime:
 
                     if not hasattr(self.broker, "place_order"):
                         raise RuntimeError("Configured broker does not support live order placement")
-                    broker_order = self.broker.place_order(order, bar.close)
+                    broker_order = self.broker.place_order(order, market_price)
                     order.broker_order_id = broker_order.broker_order_id
                     order.status = OrderStatus.SUBMITTED
                     result.submitted_orders.append(broker_order)
@@ -452,7 +463,7 @@ class LiveTradingRuntime:
                             AlertMessage(
                                 severity="INFO",
                                 title=f"Live Order {order.side.value}",
-                                body=f"{order.symbol} qty={order.quantity} price={bar.close:.2f}",
+                                body=f"{order.symbol} qty={order.quantity} price={market_price:.2f}",
                             )
                         )
                     if self.signal_state_store is not None:
@@ -540,6 +551,16 @@ class LiveTradingRuntime:
                 signal.reason,
             ]
         )
+
+    @staticmethod
+    def _resolve_market_price(signal: Signal, latest_prices: dict[str, float], bar: Bar) -> float:
+        if signal.symbol in latest_prices:
+            return latest_prices[signal.symbol]
+        if signal.reference_price is not None:
+            return signal.reference_price
+        if signal.symbol == bar.symbol:
+            return bar.close
+        raise ValueError(f"No market price available for signal symbol={signal.symbol}")
 
     def _record_event(
         self,
