@@ -78,6 +78,8 @@
 - `qmt_live` 允许作为实时或准实时数据源，但应默认服务于 `signal-watch` 或 `live-trade`，不要把它误当成稳定的历史研究数据源。
 - 数据回退逻辑，尤其是 AKShare 回退到本地 CSV 的行为，必须显式且有测试覆盖。
 - 策略改动不能破坏多标的处理和基准过滤逻辑，除非配置和文档同步说明。
+- 自动选股类策略如果会在同一时点对多个 symbol 发信号，必须确保执行层按 signal.symbol 对应价格成交，不能复用当前 bar 的单一价格。
+- A 股默认遵守 T+1 卖出约束；如果放宽或改写该约束，必须同步更新配置、测试与文档边界。
 
 ## 持久化与运行时约束
 
@@ -87,6 +89,7 @@
 - live trading 不得复用 paper trading 的本地伪成交逻辑；真实发单与真实成交/持仓同步必须分开处理。
 - 真实下单路径应优先保留 `broker_order_id`，并支持后续把委托、成交、对账串起来。
 - broker 同步逻辑应尽量幂等；同一笔成交重复同步时，不应重复写入本地 fills。
+- `daily_performance` 属于核心盘后产物；如果调整其字段或计算口径，必须同步说明是累计收益、当日收益还是两者同时记录。
 
 ## 测试要求
 
@@ -137,6 +140,12 @@
 - 当前工作区关键变更：已增加 `broker_order_id`、broker 成交查询和 `reconcile-broker` 命令，live trading 启动前默认先同步 broker 状态。
 - 当前工作区关键变更：broker 同步现已支持按 `broker_order_id` 回补本地订单状态，并将成交同步成幂等的本地 fills。
 - 当前工作区关键变更：已增加 `recover-live-session` 命令，用于 live 会话重启后的订单接管与状态恢复。
+- `待提交`：增加自动选股轮动策略、跨标的批量信号执行、A 股 T+1 卖出限制，以及盘后 `daily_performance` 的当日收益口径。
+- 当前工作区关键变更：已增加 `qmt_live` 数据源、`guojin_qmt_live` provider 和 `live-trade` 命令，真实下单仍需显式开启 `broker.allow_live_trading=true`。
+- 当前工作区关键变更：已增加 `broker_order_id`、broker 成交查询和 `reconcile-broker` 命令，live trading 启动前默认先同步 broker 状态。
+- 当前工作区关键变更：broker 同步现已支持按 `broker_order_id` 回补本地订单状态，并将成交同步成幂等的本地 fills。
+- 当前工作区关键变更：已增加 `recover-live-session` 命令，用于 live 会话重启后的订单接管与状态恢复。
+- 当前工作区关键变更：已增加自动选股轮动策略、跨标的批量信号执行、A 股 T+1 卖出限制，以及盘后 `daily_performance` 的当日收益口径。
 
 ## 当前演进主线
 
@@ -147,6 +156,8 @@
 - 阶段五：终端抽象、QMT/PTrade/QMT SDK/xtquant 查询路径准备。
 - 阶段六：市场状态过滤、参数扫描、signal watch、daily workflow，逐步形成日常运行闭环。
 - 阶段七：QMT 实时行情与 live order 提交链路接入，但真实成交回报和撤单管理仍待继续完善。
+- 阶段七：QMT 实时行情与 live order 提交链路接入，但真实成交回报和撤单管理仍待继续完善。
+- 阶段八：自动选股轮动、A 股卖出约束、盘后收益入库，开始向“少人工干预的虚空组合运行”推进。
 
 ## 推荐阅读顺序
 

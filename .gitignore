@@ -6,8 +6,13 @@ __pycache__/
 .venv/
 *.egg-info/
 trading.db
+trading_*.db
 logs/
 runtime.lock
 runtime_state.json
 signal_watch_state.json
 daily_workflow_state.json
+runtime_*.lock
+runtime_state_*.json
+signal_watch_state_*.json
+daily_workflow_state_*.json

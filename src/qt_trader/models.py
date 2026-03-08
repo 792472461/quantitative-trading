@@ -36,6 +36,7 @@ class Signal:
     side: OrderSide
     quantity: int
     reason: str = ""
+    reference_price: float | None = None
 
 
 @dataclass(slots=True)
@@ -72,6 +73,7 @@ class Position:
     symbol: str
     quantity: int = 0
     average_cost: float = 0.0
+    last_buy_timestamp: datetime | None = None
 
 
 @dataclass(slots=True)

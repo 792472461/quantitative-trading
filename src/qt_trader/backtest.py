@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from qt_trader.broker.base import BrokerGateway
-from qt_trader.models import Bar, Fill, Order, OrderStatus, PortfolioSnapshot
+from qt_trader.models import Bar, Fill, Order, OrderStatus, PortfolioSnapshot, Signal
 from qt_trader.portfolio import Portfolio
 from qt_trader.risk import RiskManager
 from qt_trader.strategy.base import Strategy
@@ -41,27 +41,28 @@ class BacktestEngine:
         for bar in bars:
             latest_prices[bar.symbol] = bar.close
             signals = self.strategy.on_bar(bar)
-            snapshot = self.portfolio.snapshot(bar.timestamp, latest_prices)
 
             for signal in signals:
+                snapshot = self.portfolio.snapshot(bar.timestamp, latest_prices)
                 # Strategy only emits intent; order creation and risk checks happen here.
+                market_price = self._resolve_market_price(signal, latest_prices, bar)
                 order = Order(
                     symbol=signal.symbol,
                     side=signal.side,
                     quantity=signal.quantity,
                     timestamp=bar.timestamp,
-                    price=bar.close,
+                    price=market_price,
                     reason=signal.reason,
                 )
                 existing_position = snapshot.positions.get(signal.symbol)
-                accepted, reason = self.risk_manager.validate_order(order, snapshot, bar.close, existing_position)
+                accepted, reason = self.risk_manager.validate_order(order, snapshot, market_price, existing_position)
                 if not accepted:
                     order.status = OrderStatus.REJECTED
                     order.reason = reason
                     result.rejected_orders.append(order)
                     continue
 
-                fill = self.broker.submit_order(order, bar.close)
+                fill = self.broker.submit_order(order, market_price)
                 self.portfolio.apply_fill(fill)
                 order.status = OrderStatus.FILLED
                 result.executed_orders.append(order)
@@ -70,3 +71,13 @@ class BacktestEngine:
             result.snapshots.append(self.portfolio.snapshot(bar.timestamp, latest_prices))
 
         return result
+
+    @staticmethod
+    def _resolve_market_price(signal: Signal, latest_prices: dict[str, float], bar: Bar) -> float:
+        if signal.symbol in latest_prices:
+            return latest_prices[signal.symbol]
+        if signal.reference_price is not None:
+            return signal.reference_price
+        if signal.symbol == bar.symbol:
+            return bar.close
+        raise ValueError(f"No market price available for signal symbol={signal.symbol}")

@@ -16,6 +16,7 @@ from qt_trader.broker.http_readonly import HTTPReadOnlyBroker
 from qt_trader.broker.qmt_sdk import QMTSdkBundle, QMTSdkClient
 from qt_trader.broker.terminal_client import MockTerminalClient
 from qt_trader.broker.factory import BrokerConfigurationError, create_broker
+from qt_trader.cli_helpers import build_strategy
 from qt_trader.config import load_config
 from qt_trader.costs import ExecutionCostModel
 from qt_trader.data.akshare_data import AKShareDataFeed
@@ -412,6 +413,8 @@ def test_storage_daily_performance_and_fill_queries(tmp_path: Path) -> None:
     storage.save_daily_performance(
         trading_date="2026-03-09",
         created_at="2026-03-09T15:05:00",
+        daily_pnl=2460.0,
+        daily_return_pct=1.23,
         total_return_pct=1.23,
         max_drawdown_pct=0.45,
         final_equity=202460.0,
@@ -436,6 +439,8 @@ def test_storage_daily_performance_and_fill_queries(tmp_path: Path) -> None:
 
     assert len(daily_rows) == 1
     assert daily_rows[0].trading_date == "2026-03-09"
+    assert daily_rows[0].daily_pnl == 2460.0
+    assert daily_rows[0].daily_return_pct == 1.23
     assert len(buy_rows) == 1
     assert buy_rows[0]["symbol"] == "600519.SH"
 
@@ -1633,3 +1638,101 @@ def test_preflight_checks_warn_when_live_qmt_switch_is_disabled() -> None:
         assert "live trading switch is disabled" in check_map["broker"].message
     finally:
         Path("XtMiniQmt.exe").unlink(missing_ok=True)
+
+def test_auto_rotation_strategy_rotates_winners_and_keeps_strong_names() -> None:
+    config = load_config(Path("config/auto_rotation.yaml"))
+    strategy = build_strategy(config)
+    bars = [
+        Bar("600519.SH", datetime.fromisoformat("2026-03-02T15:00:00"), 10, 10, 10, 10, 1000),
+        Bar("000001.SZ", datetime.fromisoformat("2026-03-02T15:00:00"), 10, 10, 10, 10, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-03T15:00:00"), 10.5, 10.5, 10.5, 10.5, 1100),
+        Bar("000001.SZ", datetime.fromisoformat("2026-03-03T15:00:00"), 10.2, 10.2, 10.2, 10.2, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-04T15:00:00"), 11, 11, 11, 11, 1200),
+        Bar("000001.SZ", datetime.fromisoformat("2026-03-04T15:00:00"), 10.4, 10.4, 10.4, 10.4, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-05T15:00:00"), 11.5, 11.5, 11.5, 11.5, 1400),
+        Bar("000001.SZ", datetime.fromisoformat("2026-03-05T15:00:00"), 10.6, 10.6, 10.6, 10.6, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-06T15:00:00"), 11.8, 11.8, 11.8, 11.8, 1500),
+        Bar("000001.SZ", datetime.fromisoformat("2026-03-06T15:00:00"), 10.8, 10.8, 10.8, 10.8, 1000),
+        Bar("600519.SH", datetime.fromisoformat("2026-03-09T15:00:00"), 11.0, 11.0, 11.0, 11.0, 900),
+        Bar("000001.SZ", datetime.fromisoformat("2026-03-09T15:00:00"), 11.4, 11.4, 11.4, 11.4, 1800),
+    ]
+
+    signals_by_day: dict[str, list[tuple[str, OrderSide]]] = {}
+    for bar in bars:
+        signals = strategy.on_bar(bar)
+        if signals:
+            signals_by_day[bar.timestamp.date().isoformat()] = [(signal.symbol, signal.side) for signal in signals]
+
+    assert signals_by_day["2026-03-05"] == [("600519.SH", OrderSide.BUY)]
+    assert "2026-03-06" not in signals_by_day
+    assert signals_by_day["2026-03-09"] == [
+        ("600519.SH", OrderSide.SELL),
+        ("000001.SZ", OrderSide.BUY),
+    ]
+
+
+def test_t_plus_one_sell_blocks_same_day_exit() -> None:
+    risk_manager = RiskManager(
+        max_position_pct=0.5,
+        max_drawdown_pct=0.2,
+        max_total_exposure_pct=0.8,
+        max_positions=5,
+        max_symbol_quantity=1000,
+        t_plus_one_sell=True,
+    )
+    portfolio = Portfolio(initial_cash=100000)
+    portfolio.apply_fill(
+        create_broker(load_config(Path("config/example.yaml")), portfolio=portfolio).submit_order(
+            Order(
+                symbol="600519.SH",
+                side=OrderSide.BUY,
+                quantity=100,
+                timestamp=datetime.fromisoformat("2026-03-09T10:00:00"),
+                price=100.0,
+            ),
+            100.0,
+        )
+    )
+    snapshot = portfolio.snapshot(datetime.fromisoformat("2026-03-09T14:30:00"), {"600519.SH": 101.0})
+    sell_order = Order(
+        symbol="600519.SH",
+        side=OrderSide.SELL,
+        quantity=100,
+        timestamp=datetime.fromisoformat("2026-03-09T14:30:00"),
+        price=101.0,
+    )
+
+    accepted, reason = risk_manager.validate_order(
+        sell_order,
+        snapshot,
+        101.0,
+        snapshot.positions["600519.SH"],
+    )
+
+    assert accepted is False
+    assert reason == "t+1 sell blocked"
+
+
+def test_auto_rotation_backtest_supports_cross_symbol_signals() -> None:
+    config = load_config(Path("config/auto_rotation.yaml"))
+    bars = create_data_feed(config).load()
+    portfolio = Portfolio(initial_cash=config.backtest.initial_cash)
+    engine = BacktestEngine(
+        strategy=build_strategy(config),
+        broker=create_broker(config, portfolio=portfolio),
+        portfolio=portfolio,
+        risk_manager=RiskManager(
+            max_position_pct=config.backtest.max_position_pct,
+            max_drawdown_pct=config.backtest.max_drawdown_pct,
+            max_total_exposure_pct=config.backtest.max_total_exposure_pct,
+            max_positions=config.backtest.max_positions,
+            max_symbol_quantity=config.backtest.max_symbol_quantity,
+            t_plus_one_sell=config.backtest.t_plus_one_sell,
+        ),
+    )
+
+    result = engine.run(bars)
+
+    assert result.final_snapshot is not None
+    assert len(result.executed_orders) > 0
+    assert len({order.symbol for order in result.executed_orders}) >= 1

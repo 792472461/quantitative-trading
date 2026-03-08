@@ -423,9 +423,15 @@ def daily_workflow(
                             console.print("[red]No market data loaded.[/red]")
                             raise typer.Exit(code=1)
                         metrics = analyze_backtest(result, app_config.backtest.initial_cash)
+                        previous_rows = storage.latest_daily_performance(limit=1)
+                        base_equity = previous_rows[0].final_equity if previous_rows else app_config.backtest.initial_cash
+                        daily_pnl = final_snapshot.total_value - base_equity
+                        daily_return_pct = 0.0 if base_equity <= 0 else daily_pnl / base_equity * 100
                         storage.save_daily_performance(
                             trading_date=trading_date,
                             created_at=datetime.now().isoformat(),
+                            daily_pnl=daily_pnl,
+                            daily_return_pct=daily_return_pct,
                             total_return_pct=metrics.total_return_pct,
                             max_drawdown_pct=metrics.max_drawdown_pct,
                             final_equity=final_snapshot.total_value,

@@ -17,6 +17,7 @@ class BacktestConfig(BaseModel):
     max_positions: int = Field(default=10, gt=0)
     max_symbol_quantity: int = Field(default=10000, gt=0)
     max_drawdown_pct: float = Field(default=0.12, gt=0, le=1)
+    t_plus_one_sell: bool = True
 
 
 class DataConfig(BaseModel):
@@ -60,6 +61,11 @@ class StrategyConfig(BaseModel):
     benchmark_symbol: str | None = None
     market_fast_window: int = Field(default=5, gt=1)
     market_slow_window: int = Field(default=20, gt=1)
+    selection_window: int = Field(default=5, gt=1)
+    selection_top_n: int = Field(default=3, gt=0)
+    selection_volume_window: int = Field(default=5, gt=1)
+    selection_exit_rank_buffer: int = Field(default=1, ge=0)
+    min_holding_days: int = Field(default=1, ge=0)
 
 
 class BrokerConfig(BaseModel):

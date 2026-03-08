@@ -11,12 +11,14 @@ class RiskManager:
         max_total_exposure_pct: float = 0.8,
         max_positions: int = 10,
         max_symbol_quantity: int = 10000,
+        t_plus_one_sell: bool = True,
     ) -> None:
         self.max_position_pct = max_position_pct
         self.max_drawdown_pct = max_drawdown_pct
         self.max_total_exposure_pct = max_total_exposure_pct
         self.max_positions = max_positions
         self.max_symbol_quantity = max_symbol_quantity
+        self.t_plus_one_sell = t_plus_one_sell
 
     def validate_order(
         self,
@@ -31,6 +33,12 @@ class RiskManager:
         if order.side == OrderSide.SELL:
             if existing_position is None or existing_position.quantity < order.quantity:
                 return False, "insufficient position"
+            if (
+                self.t_plus_one_sell
+                and existing_position.last_buy_timestamp is not None
+                and existing_position.last_buy_timestamp.date() >= order.timestamp.date()
+            ):
+                return False, "t+1 sell blocked"
             return True, ""
 
         order_value = current_price * order.quantity

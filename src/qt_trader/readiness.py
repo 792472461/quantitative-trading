@@ -30,6 +30,13 @@ def run_preflight_checks(config: AppConfig) -> list[PreflightCheck]:
 def _check_strategy(config: AppConfig) -> PreflightCheck:
     if config.strategy.name == "moving_average_cross" and config.strategy.fast_window >= config.strategy.slow_window:
         return PreflightCheck("strategy", "FAIL", "fast_window must be smaller than slow_window")
+    if config.strategy.name == "auto_rotation":
+        benchmark_symbol = config.strategy.benchmark_symbol
+        universe = [symbol for symbol in (config.data.symbols or [config.data.symbol]) if symbol != benchmark_symbol]
+        if config.strategy.selection_top_n > len(universe):
+            return PreflightCheck("strategy", "FAIL", "selection_top_n cannot exceed symbol universe size")
+        if config.strategy.min_holding_days < 1 and config.backtest.t_plus_one_sell:
+            return PreflightCheck("strategy", "WARN", "t+1 sell is enabled, actual holding period will still be at least 1 day")
     if config.strategy.market_filter_enabled and not config.strategy.benchmark_symbol:
         return PreflightCheck("strategy", "FAIL", "benchmark_symbol is required when market_filter_enabled=true")
     if config.strategy.market_fast_window >= config.strategy.market_slow_window:

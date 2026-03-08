@@ -7,6 +7,7 @@
 - 策略开发接口
 - 可切换数据源
 - 多标的支持
+- 自动选股轮动策略
 - CSV 行情驱动的回测引擎
 - AKShare A 股历史行情接入
 - 基础风险控制
@@ -16,7 +17,9 @@
 - 告警通道
 - 更真实的交易成本模型
 - 组合级风控
+- A 股 T+1 卖出限制
 - 任务守护与自动恢复基础
+- 盘后日收益入库
 - 券商账户/持仓/委托查询骨架
 - 回测绩效分析
 - 券商网关抽象层
@@ -43,6 +46,7 @@ qt-trader backtest --config config\example.yaml
 qt-trader paper-trade --config config\example.yaml
 qt-trader fetch-data --config config\akshare.yaml
 qt-trader backtest --config config\multi_symbol.yaml
+qt-trader backtest --config config\auto_rotation.yaml
 qt-trader market-status --config config\example.yaml
 qt-trader send-test-alert --config config\example.yaml
 qt-trader runtime-state --config config\example.yaml
@@ -85,8 +89,10 @@ tests/
 - 本地研究策略
 - 做基础回测
 - 跑多标的组合级回测
+- 跑固定候选池上的自动选股轮动
 - 模拟下单和风控校验
 - 控制组合总仓位和持仓集中度
+- 遵守 A 股同日买入次日才能卖出的默认约束
 - 根据节假日和调休判断是否应运行
 - 防止重复启动并记录上次运行状态
 - 直接查看账户概览、最近事件和成交摘要
@@ -113,6 +119,7 @@ tests/
 ```bash
 qt-trader backtest --config config\example.yaml
 qt-trader backtest --config config\multi_symbol.yaml
+qt-trader backtest --config config\auto_rotation.yaml
 qt-trader paper-trade --config config\example.yaml
 qt-trader fetch-data --config config\akshare.yaml
 qt-trader market-status --config config\example.yaml
@@ -143,6 +150,8 @@ qt-trader version
 `reconcile-broker` 会把券商账户、持仓、委托、成交同步进本地 SQLite，并输出本地订单与券商订单/成交的差异摘要。
 同步过程中会按 `broker_order_id` 回补本地订单状态，支持 `SUBMITTED`、`PARTIALLY_FILLED`、`FILLED`、`CANCELED` 等实盘状态。
 `recover-live-session` 会在重新接管 live 会话前展示当前本地未完成订单，并先做一轮 broker 同步与状态回补。
+`auto_rotation.yaml` 演示固定候选池上的自动选股轮动，默认以 `100000` 初始资金做虚空交易。
+盘后 `daily_performance` 现在会同时记录累计收益、当日盈亏和当日收益率。
 运行日志会写到 `logs/runtime.jsonl`，告警可输出到终端和 `logs/alerts.log`。
 运行锁默认写到 `runtime.lock`，运行状态默认写到 `runtime_state.json`。
 `readonly_broker.yaml` 是只读联调样例，不会允许真实下单，只会读取本地账户快照文件。

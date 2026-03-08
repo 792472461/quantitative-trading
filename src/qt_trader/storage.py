@@ -78,6 +78,8 @@ class BacktestRunRecord:
 class DailyPerformanceRecord:
     trading_date: str
     created_at: str
+    daily_pnl: float
+    daily_return_pct: float
     total_return_pct: float
     max_drawdown_pct: float
     final_equity: float
@@ -257,6 +259,8 @@ class SQLiteStorage:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     trading_date TEXT NOT NULL,
                     created_at TEXT NOT NULL,
+                    daily_pnl REAL NOT NULL DEFAULT 0,
+                    daily_return_pct REAL NOT NULL DEFAULT 0,
                     total_return_pct REAL NOT NULL,
                     max_drawdown_pct REAL NOT NULL,
                     final_equity REAL NOT NULL,
@@ -266,6 +270,7 @@ class SQLiteStorage:
                 """
             )
             self._ensure_fill_columns(conn)
+            self._ensure_daily_performance_columns(conn)
 
     def _ensure_fill_columns(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(fills)").fetchall()}
@@ -289,6 +294,13 @@ class SQLiteStorage:
             conn.execute("ALTER TABLE broker_trades ADD COLUMN trade_id TEXT NOT NULL DEFAULT ''")
         if "broker_order_id" not in trade_columns:
             conn.execute("ALTER TABLE broker_trades ADD COLUMN broker_order_id TEXT NOT NULL DEFAULT ''")
+
+    def _ensure_daily_performance_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(daily_performance)").fetchall()}
+        if "daily_pnl" not in columns:
+            conn.execute("ALTER TABLE daily_performance ADD COLUMN daily_pnl REAL NOT NULL DEFAULT 0")
+        if "daily_return_pct" not in columns:
+            conn.execute("ALTER TABLE daily_performance ADD COLUMN daily_return_pct REAL NOT NULL DEFAULT 0")
 
     def save_order(self, order: Order) -> None:
         with self._connect() as conn:
@@ -471,6 +483,8 @@ class SQLiteStorage:
         *,
         trading_date: str,
         created_at: str,
+        daily_pnl: float,
+        daily_return_pct: float,
         total_return_pct: float,
         max_drawdown_pct: float,
         final_equity: float,
@@ -483,17 +497,21 @@ class SQLiteStorage:
                 INSERT INTO daily_performance (
                     trading_date,
                     created_at,
+                    daily_pnl,
+                    daily_return_pct,
                     total_return_pct,
                     max_drawdown_pct,
                     final_equity,
                     filled_orders,
                     rejected_orders
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     trading_date,
                     created_at,
+                    daily_pnl,
+                    daily_return_pct,
                     total_return_pct,
                     max_drawdown_pct,
                     final_equity,
@@ -506,7 +524,16 @@ class SQLiteStorage:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT trading_date, created_at, total_return_pct, max_drawdown_pct, final_equity, filled_orders, rejected_orders
+                SELECT
+                    trading_date,
+                    created_at,
+                    daily_pnl,
+                    daily_return_pct,
+                    total_return_pct,
+                    max_drawdown_pct,
+                    final_equity,
+                    filled_orders,
+                    rejected_orders
                 FROM daily_performance
                 ORDER BY id DESC
                 LIMIT ?
@@ -517,11 +544,13 @@ class SQLiteStorage:
             DailyPerformanceRecord(
                 trading_date=str(row[0]),
                 created_at=str(row[1]),
-                total_return_pct=float(row[2]),
-                max_drawdown_pct=float(row[3]),
-                final_equity=float(row[4]),
-                filled_orders=int(row[5]),
-                rejected_orders=int(row[6]),
+                daily_pnl=float(row[2]),
+                daily_return_pct=float(row[3]),
+                total_return_pct=float(row[4]),
+                max_drawdown_pct=float(row[5]),
+                final_equity=float(row[6]),
+                filled_orders=int(row[7]),
+                rejected_orders=int(row[8]),
             )
             for row in rows
         ]

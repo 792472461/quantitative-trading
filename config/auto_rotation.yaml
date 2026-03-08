@@ -1,0 +1,62 @@
+environment: paper
+data:
+  provider: csv
+  csv_path: data/multi_symbol_daily.csv
+  symbol: 600519.SH
+  symbols: [600519.SH, 000001.SZ]
+  symbol_column: symbol
+  datetime_column: datetime
+backtest:
+  initial_cash: 100000
+  commission_rate: 0.0003
+  min_commission: 5.0
+  stamp_duty_rate: 0.001
+  slippage_bps: 5.0
+  max_position_pct: 0.5
+  max_total_exposure_pct: 0.8
+  max_positions: 2
+  max_symbol_quantity: 1000
+  max_drawdown_pct: 0.15
+  t_plus_one_sell: true
+strategy:
+  name: auto_rotation
+  trade_size: 100
+  selection_window: 3
+  selection_top_n: 1
+  selection_volume_window: 3
+  selection_exit_rank_buffer: 1
+  min_holding_days: 1
+broker:
+  provider: paper
+  api_key_env: BROKER_API_KEY
+  api_secret_env: BROKER_API_SECRET
+  account_id_env: BROKER_ACCOUNT_ID
+storage:
+  sqlite_path: trading_auto_rotation.db
+runtime:
+  polling_interval_seconds: 1.0
+  persist_snapshots: true
+  max_retries: 2
+  lock_path: runtime_auto_rotation.lock
+  state_path: runtime_state_auto_rotation.json
+  signal_state_path: signal_watch_state_auto_rotation.json
+  workflow_state_path: daily_workflow_state_auto_rotation.json
+logging:
+  level: INFO
+  jsonl_path: logs/auto_rotation_runtime.jsonl
+alert:
+  enabled: true
+  channels: [stdout, file]
+  max_drawdown_pct: 0.05
+  rejected_order_threshold: 1
+market:
+  timezone: Asia/Shanghai
+  weekdays: [0, 1, 2, 3, 4]
+  pre_market_start: "09:00"
+  morning_start: "09:30"
+  morning_end: "11:30"
+  afternoon_start: "13:00"
+  afternoon_end: "15:00"
+  holidays: []
+  makeup_workdays: []
+  holiday_files: [config/calendar_ashare_2026.json]

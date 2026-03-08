@@ -95,9 +95,9 @@ class PaperTradingRuntime:
 
         for bar in bars:
             latest_prices[bar.symbol] = bar.close
-            snapshot = self.portfolio.snapshot(bar.timestamp, latest_prices)
-
             for signal in self.strategy.on_bar(bar):
+                snapshot = self.portfolio.snapshot(bar.timestamp, latest_prices)
+                market_price = self._resolve_market_price(signal, latest_prices, bar)
                 self._record_event(
                     "signal_generated",
                     "INFO",
@@ -109,11 +109,11 @@ class PaperTradingRuntime:
                     side=signal.side,
                     quantity=signal.quantity,
                     timestamp=bar.timestamp,
-                    price=bar.close,
+                    price=market_price,
                     reason=signal.reason,
                 )
                 existing_position = snapshot.positions.get(signal.symbol)
-                accepted, reason = self.risk_manager.validate_order(order, snapshot, bar.close, existing_position)
+                accepted, reason = self.risk_manager.validate_order(order, snapshot, market_price, existing_position)
                 if not accepted:
                     order.status = OrderStatus.REJECTED
                     order.reason = reason
@@ -130,14 +130,14 @@ class PaperTradingRuntime:
                     self._maybe_alert_on_rejected_orders()
                     continue
 
-                fill = self.broker.submit_order(order, bar.close)
+                fill = self.broker.submit_order(order, market_price)
                 self.portfolio.apply_fill(fill)
                 order.status = OrderStatus.FILLED
                 result.executed_orders.append(order)
                 self._record_event(
                     "order_filled",
                     "INFO",
-                    f"{order.symbol} {order.side.value} {order.quantity} @ {bar.close:.2f}",
+                    f"{order.symbol} {order.side.value} {order.quantity} @ {market_price:.2f}",
                     order.timestamp,
                 )
 
@@ -158,6 +158,16 @@ class PaperTradingRuntime:
         if self.state_store is not None:
             self.state_store.mark_completed()
         return result
+
+    @staticmethod
+    def _resolve_market_price(signal: Signal, latest_prices: dict[str, float], bar: Bar) -> float:
+        if signal.symbol in latest_prices:
+            return latest_prices[signal.symbol]
+        if signal.reference_price is not None:
+            return signal.reference_price
+        if signal.symbol == bar.symbol:
+            return bar.close
+        raise ValueError(f"No market price available for signal symbol={signal.symbol}")
 
     def _record_event(
         self,

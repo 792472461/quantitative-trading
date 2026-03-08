@@ -39,6 +39,9 @@
 - 市场状态过滤策略增强
 - 分阶段市场分析
 - A 股政策主题选股 skill
+- 自动选股轮动策略
+- A 股 T+1 卖出限制
+- 盘后日收益入库
 
 ## Architecture
 
@@ -82,6 +85,7 @@
 - `python -m qt_trader.cli optimize-strategy --config config/example.yaml`
 - `python -m qt_trader.cli preflight-check --config config/example.yaml`
 - `python -m qt_trader.cli backtest --config config/market_regime.yaml`
+- `python -m qt_trader.cli backtest --config config/auto_rotation.yaml`
 - `python -m qt_trader.cli signal-watch --config config/example.yaml --iterations 1 --force`
 - `python -m qt_trader.cli daily-workflow --config config/example.yaml --iterations 1 --at 2026-03-06T09:10:00`
 - `python -m qt_trader.cli preflight-check --config config/guojin_qmt_live.yaml`
@@ -101,6 +105,9 @@
 - `reconcile-broker` 会将 broker 账户、持仓、委托、成交快照落库，并输出本地与券商的订单差异摘要
 - broker 同步过程会按 `broker_order_id` 回补本地订单状态，并将成交幂等落库到 `fills`
 - `recover-live-session` 会在重新接管实时交易前展示未完成本地订单，适合程序重启后的恢复流程
+- `auto_rotation` 会在固定候选池内按价格强度和量能变化自动轮动，强势票次日不强制卖出
+- 默认 A 股卖出约束是 T+1，当日买入仓位至少到下一交易日才能卖出
+- `daily_performance` 会同时落累计收益、当日盈亏和当日收益率
 
 ## Iteration Log
 
@@ -237,6 +244,10 @@
 - 演示一版按政策主线筛选的 A 股主板观察池输出效果
 - 增加只提醒买卖信号的 `signal-watch` 常驻扫描命令
 - 增加按交易阶段执行的 `daily-workflow` 命令
+- 增加自动选股轮动策略，允许在固定候选池中做虚空调仓
+- 执行层支持同一时点按 `signal.symbol` 对多标的批量成交，避免复用当前 bar 的单一价格
+- 增加 A 股 T+1 卖出限制
+- 增加 `daily_performance` 的当日盈亏和当日收益率字段
 - 后续每次迭代完成后同步更新本文档
 
 ### 2026-03-08 - Current Iteration
@@ -256,3 +267,4 @@
 - broker 同步调度与告警
 - 任务守护与自动恢复完善
 - dashboard Web 化
+- 盘中热点/主题数据接入

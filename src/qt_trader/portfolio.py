@@ -23,12 +23,14 @@ class Portfolio:
             total_cost = position.average_cost * position.quantity + cost
             position.quantity += fill.quantity
             position.average_cost = total_cost / position.quantity
+            position.last_buy_timestamp = fill.timestamp
             self.cash -= cost
         else:
             position.quantity -= fill.quantity
             self.cash += gross - total_fees
             if position.quantity == 0:
                 position.average_cost = 0.0
+                position.last_buy_timestamp = None
 
     def snapshot(self, timestamp: datetime, latest_prices: dict[str, float]) -> PortfolioSnapshot:
         positions_value = 0.0
